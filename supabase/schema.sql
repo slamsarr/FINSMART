@@ -9,7 +9,7 @@ create table if not exists public.app_admins (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Insérez les emails des administrateurs principaux ici :
+-- Insérez votre email administrateur principal ici :
 insert into public.app_admins (email)
 values 
   ('souleymane.aw@gmail.com')
@@ -26,38 +26,37 @@ create table if not exists public.profiles (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Trigger pour synchroniser auth.users avec public.profiles
+-- 3. Trigger pour synchroniser auth.users avec public.profiles
 create or replace function public.handle_new_user()
-returns trigger as $$
-declare
-  admin_match boolean;
+returns trigger 
+language plpgsql 
+security definer
+as $func$
 begin
-  select exists(select 1 from public.app_admins where lower(email) = lower(new.email)) into admin_match;
-  
   insert into public.profiles (id, nom_complet, telephone, email, is_admin)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'nom_complet', ''),
     coalesce(new.raw_user_meta_data->>'telephone', ''),
     new.email,
-    coalesce(admin_match, false)
+    exists(select 1 from public.app_admins a where lower(a.email) = lower(new.email))
   )
   on conflict (id) do update set
     nom_complet = excluded.nom_complet,
     telephone = excluded.telephone,
     email = excluded.email,
-    is_admin = coalesce(admin_match, profiles.is_admin);
+    is_admin = exists(select 1 from public.app_admins a where lower(a.email) = lower(new.email));
     
   return new;
 end;
-$$ language plpgsql security definer;
+$func$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert or update on auth.users
   for each row execute procedure public.handle_new_user();
 
--- 3. Table des entreprises
+-- 4. Table des entreprises
 create table if not exists public.companies (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()),
@@ -71,7 +70,7 @@ create table if not exists public.companies (
   email_contact text
 );
 
--- 4. Table des exercices / dossiers
+-- 5. Table des exercices / dossiers
 create table if not exists public.exercises (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()),
@@ -101,19 +100,21 @@ create table if not exists public.exercises (
 
 -- Trigger pour mettre à jour exercises.updated_at
 create or replace function public.touch_exercise_updated_at()
-returns trigger as $$
+returns trigger 
+language plpgsql
+as $func$
 begin
   new.updated_at = timezone('utc'::text, now());
   return new;
 end;
-$$ language plpgsql;
+$func$;
 
 drop trigger if exists on_exercise_updated on public.exercises;
 create trigger on_exercise_updated
   before update on public.exercises
   for each row execute procedure public.touch_exercise_updated_at();
 
--- 5. Table des fichiers attachés aux exercices
+-- 6. Table des fichiers attachés aux exercices
 create table if not exists public.exercise_files (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()),
@@ -134,16 +135,19 @@ alter table public.companies enable row level security;
 alter table public.exercises enable row level security;
 alter table public.exercise_files enable row level security;
 
--- Fonction d'aide pour tester si l'utilisateur courant est admin
+-- Fonction pour vérifier si l'utilisateur est admin
 create or replace function public.is_app_admin()
-returns boolean as $$
+returns boolean 
+language sql 
+security definer
+as $func$
   select exists (
-    select 1 from public.profiles
-    where id = auth.uid() and is_admin = true
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.is_admin = true
   );
-$$ language sql security definer;
+$func$;
 
--- Profiles
+-- RLS Profiles
 drop policy if exists "Profiles: select self or admin" on public.profiles;
 create policy "Profiles: select self or admin" on public.profiles
   for select using (auth.uid() = id or public.is_app_admin());
@@ -152,19 +156,19 @@ drop policy if exists "Profiles: update self" on public.profiles;
 create policy "Profiles: update self" on public.profiles
   for update using (auth.uid() = id);
 
--- Companies
+-- RLS Companies
 drop policy if exists "Companies: manage by owner or admin" on public.companies;
 create policy "Companies: manage by owner or admin" on public.companies
   for all using (auth.uid() = owner_id or public.is_app_admin())
   with check (auth.uid() = owner_id or public.is_app_admin());
 
--- Exercises
+-- RLS Exercises
 drop policy if exists "Exercises: manage by creator or admin" on public.exercises;
 create policy "Exercises: manage by creator or admin" on public.exercises
   for all using (auth.uid() = created_by or public.is_app_admin())
   with check (auth.uid() = created_by or public.is_app_admin());
 
--- Exercise files
+-- RLS Exercise files
 drop policy if exists "Exercise files: manage linked exercise" on public.exercise_files;
 create policy "Exercise files: manage linked exercise" on public.exercise_files
   for all using (
@@ -190,15 +194,11 @@ values
 on conflict (id) do update set public = false;
 
 -- Politiques Storage
-drop policy if exists "Storage balances: access by creator or admin" on storage.objects;
-create policy "Storage balances: access by creator or admin" on storage.objects
+drop policy if exists "Storage balances: access by authenticated" on storage.objects;
+create policy "Storage balances: access by authenticated" on storage.objects
   for all using (
-    bucket_id in ('balances', 'etats') and (
-      auth.role() = 'authenticated'
-    )
+    bucket_id in ('balances', 'etats') and auth.role() = 'authenticated'
   )
   with check (
-    bucket_id in ('balances', 'etats') and (
-      auth.role() = 'authenticated'
-    )
+    bucket_id in ('balances', 'etats') and auth.role() = 'authenticated'
   );

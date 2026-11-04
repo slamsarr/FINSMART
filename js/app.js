@@ -80,12 +80,28 @@ $('#btnLogout').addEventListener('click', async () => { await sb.auth.signOut();
 async function onSession(session) {
   state.user = session ? session.user : null;
   if (!state.user) { show('auth'); return; }
-  const { data: prof } = await sb.from('profiles').select('*').eq('id', state.user.id).maybeSingle();
-  state.profile = prof || { email: state.user.email };
+  await refreshProfile();
   $('#whoami').textContent = state.profile.nom_complet || state.user.email;
   $('#navAdmin').hidden = !state.profile.is_admin;
   route();
 }
+
+async function refreshProfile() {
+  if (!state.user) return;
+  const { data: prof } = await sb.from('profiles').select('*').eq('id', state.user.id).maybeSingle();
+  state.profile = prof || { email: state.user.email, credits_balance: 0 };
+  updateCreditsDisplay();
+}
+
+function updateCreditsDisplay() {
+  const c = state.profile?.credits_balance || 0;
+  const txt = `${c} crédit${c > 1 ? 's' : ''}`;
+  const badgeEl = $('#userCreditsBadge');
+  if (badgeEl) badgeEl.textContent = txt;
+  const balEl = $('#pricingUserBalance');
+  if (balEl) balEl.textContent = txt;
+}
+$('#userCreditsBadge')?.addEventListener('click', () => (location.hash = '#/pricing'));
 
 // ------------------------------------------------------------------ navigation
 $$('[data-go]').forEach(b => b.addEventListener('click', () => (location.hash = '#/' + b.dataset.go)));
@@ -95,6 +111,7 @@ async function route() {
   const h = location.hash.replace(/^#\/?/, '');
   if (h.startsWith('dossier/')) return openDossier(h.split('/')[1]);
   if (h === 'nouveau') return newDossier();
+  if (h === 'pricing') return renderPricing();
   if (h === 'admin' && state.profile.is_admin) return renderAdmin();
   return renderDashboard();
 }
@@ -104,7 +121,7 @@ async function renderDashboard() {
   show('dashboard');
   const box = $('#dossiersList'); box.innerHTML = '<p class="muted">Chargement…</p>';
   const { data, error } = await sb.from('exercises')
-    .select('id, exercice, date_fin, statut, updated_at, generated_at, rapport, company_id, companies(nom, ninea, owner_id), exercise_files(type, storage_path, nom_original)')
+    .select('id, exercice, date_fin, statut, updated_at, generated_at, rapport, is_full_version, generation_type, company_id, companies(nom, ninea, owner_id), exercise_files(type, storage_path, nom_original)')
     .order('updated_at', { ascending: false });
   if (error) { box.innerHTML = `<p class="msg err">${esc(dbErr(error))}</p>`; return; }
   const mine = (data || []).filter(d => !state.profile.is_admin || (d.companies && d.companies.owner_id === state.user.id));
@@ -113,12 +130,15 @@ async function renderDashboard() {
     return;
   }
   box.innerHTML = mine.map(d => {
-    const liasse = (d.exercise_files || []).find(f => f.type === 'etats_complet_xlsx');
+    const liasse = (d.exercise_files || []).find(f => f.type === 'etats_complet_xlsx' || f.type === 'etats_gratuit_xlsx');
     const r = d.rapport || {};
     const ctl = d.generated_at ? (r.bloquants ? `<span class="badge bad">${r.bloquants} contrôle(s) bloquant(s)</span>` : '<span class="badge ok">Contrôles OK</span>') : '';
+    const typeBadge = d.is_full_version 
+      ? '<span class="badge ok">Complète</span>' 
+      : (d.generation_type === 'free' ? '<span class="badge warn">Évaluation</span>' : '');
     return `<article class="dossier">
       <div><h3>${esc(d.companies?.nom || 'Entreprise')}</h3><div class="meta">NINEA ${esc(d.companies?.ninea || '—')} · Exercice clos le ${esc(dateFr(d.date_fin) || d.exercice)}</div></div>
-      <div>${badge(d.statut)} ${ctl}<div class="meta">Mis à jour le ${esc(dateTimeFr(d.updated_at))}</div></div>
+      <div>${badge(d.statut)} ${ctl} ${typeBadge}<div class="meta">Mis à jour le ${esc(dateTimeFr(d.updated_at))}</div></div>
       <div class="acts">
         ${liasse ? `<button class="btn gold sm" data-dl="${esc(liasse.storage_path)}" data-name="${esc(liasse.nom_original)}">Télécharger la liasse</button>` : ''}
         <button class="btn ghost sm" onclick="location.hash='#/dossier/${d.id}'">${d.generated_at ? 'Ouvrir' : 'Continuer'}</button>
@@ -147,7 +167,7 @@ function setStep(n) {
     li.classList.toggle('locked', s > maxStep);
   });
   if (n === 3) renderInfosForm();
-  if (n === 4) renderStoredResult();
+  if (n === 4) { checkStep4Monetization(); renderStoredResult(); }
 }
 $$('#steps li').forEach(li => li.addEventListener('click', () => state.dossier && setStep(+li.dataset.step)));
 $$('[data-step-go]').forEach(b => b.addEventListener('click', () => setStep(+b.dataset.stepGo)));
@@ -386,38 +406,218 @@ function compute(payload) {
     worker.postMessage(payload);
   });
 }
-$('#btnGenerate').addEventListener('click', generate);
-async function generate() {
+// ------------------------------------------------------------------ modales & monétisation
+function closeModals() {
+  $('#modalPreGen').hidden = true;
+  $('#modalPayment').hidden = true;
+}
+$$('[data-close-modal]').forEach(b => b.addEventListener('click', closeModals));
+$('.modal-overlay')?.addEventListener('click', e => { if (e.target.classList.contains('modal-overlay')) closeModals(); });
+
+let currentMonetizationStatus = null;
+async function checkStep4Monetization() {
+  const d = state.dossier;
+  if (!d?.exercise) return;
+  const box = $('#dossierMonetizationNotice');
+  if (!box) return;
+  box.innerHTML = '<p class="small muted">Vérification de vos droits de génération…</p>';
+  try {
+    const { data, error } = await sb.rpc('get_exercise_monetization_status', { p_exercise_id: d.exercise.id });
+    if (!error && data?.ok) {
+      currentMonetizationStatus = data;
+    } else {
+      // Fallback si la fonction RPC n'est pas encore exécutée
+      const isFull = !!d.exercise.is_full_version;
+      const freeUsed = !!d.company?.free_generation_used;
+      currentMonetizationStatus = {
+        free_available: !freeUsed,
+        is_full_version: isFull,
+        user_credits: state.profile?.credits_balance || 0,
+        generation_type: d.exercise.generation_type || 'none',
+      };
+    }
+  } catch (e) {
+    currentMonetizationStatus = {
+      free_available: !d.company?.free_generation_used,
+      is_full_version: !!d.exercise.is_full_version,
+      user_credits: state.profile?.credits_balance || 0,
+      generation_type: d.exercise.generation_type || 'none',
+    };
+  }
+
+  const s = currentMonetizationStatus;
+  if (s.is_full_version) {
+    box.innerHTML = `<div class="status-banner ok">
+      <div><strong>Liasse complète officielle débloquée</strong><div class="small">Ce dossier dispose d'un accès illimité aux 55 onglets SYSCOHADA (aucun crédit supplémentaire requis).</div></div>
+    </div>`;
+  } else if (s.free_available) {
+    box.innerHTML = `<div class="status-banner ok">
+      <div><strong>1 Génération gratuite offerte disponible</strong><div class="small">Cette entreprise peut tester la liasse gratuitement (Bilan, Compte de résultat et TFT). Vous pouvez aussi utiliser un crédit pour obtenir directement la liasse complète avec les 36 notes.</div></div>
+    </div>`;
+  } else if (s.user_credits >= 1) {
+    box.innerHTML = `<div class="status-banner warn">
+      <div><strong>Génération gratuite déjà utilisée.</strong><div class="small">Vous disposez de <strong>${s.user_credits} crédit(s)</strong>. La génération complète consommera 1 crédit.</div></div>
+    </div>`;
+  } else {
+    box.innerHTML = `<div class="status-banner warn">
+      <div><strong>Génération gratuite déjà utilisée.</strong><div class="small">Vous avez utilisé votre génération gratuite. Vous pouvez débloquer votre prochaine génération complète pour 10 000 FCFA ou choisir un pack de crédits pour bénéficier d'un tarif avantageux.</div></div>
+      <button class="btn gold sm" type="button" onclick="location.hash='#/pricing'">Acheter des crédits</button>
+    </div>`;
+  }
+}
+
+$('#btnGenerate').addEventListener('click', promptGeneration);
+
+async function promptGeneration() {
   const d = state.dossier;
   if (!(d.balN?.ok && d.balN1?.ok)) return toast('Déposez deux balances conformes (étape 2).', true);
+  await checkStep4Monetization();
+  const s = currentMonetizationStatus;
+
+  // Si le dossier est déjà débloqué en version complète, génère directement
+  if (s.is_full_version) {
+    return executeGeneration('paid');
+  }
+
+  const modal = $('#modalPreGen');
+  const body = $('#preGenBody');
+
+  if (s.free_available) {
+    body.innerHTML = `
+      <p class="muted" style="margin-top:0;">Choisissez le type de génération souhaité pour <b>${esc(d.company?.nom || 'cette entreprise')}</b> :</p>
+      <div class="gen-choice-card selected" data-mode="free">
+        <h4><span>Génération Gratuite (Évaluation)</span><span class="badge ok">0 FCFA</span></h4>
+        <p>Inclus : Bilan officiel, Compte de résultat, Flux de trésorerie (TFT), chiffres clés et contrôles de cohérence. <i>(Les 36 notes et fiches complémentaires sont masquées).</i></p>
+      </div>
+      <div class="gen-choice-card" data-mode="paid">
+        <h4><span>Liasse Complète Officielle Sen-etafi</span><span class="badge gold">1 Crédit ou 10 000 FCFA</span></h4>
+        <p>Inclus : Les 55 onglets complets, toutes les 36 notes annexes remplies, conforme au dépôt fiscal officiel DGID. Solde disponible : <b>${s.user_credits} crédit(s)</b>.</p>
+      </div>
+    `;
+    setupGenChoiceCards();
+    modal.hidden = false;
+  } else if (s.user_credits >= 1) {
+    body.innerHTML = `
+      <p>La génération gratuite a déjà été utilisée pour cette entreprise.</p>
+      <div class="status-banner ok" style="margin:12px 0;">
+        <div><strong>Débloquer la liasse complète officielle</strong><div class="small">1 crédit sera débité de votre compte. Votre solde après génération sera de <b>${s.user_credits - 1} crédit(s)</b>.</div></div>
+      </div>
+      <input type="hidden" id="selectedGenMode" value="paid">
+    `;
+    modal.hidden = false;
+  } else {
+    // 0 crédit et gratuit déjà utilisé
+    body.innerHTML = `
+      <div class="status-banner warn" style="margin-top:0;">
+        <div><strong>Génération gratuite épuisée</strong></div>
+      </div>
+      <p style="margin:14px 0 16px;">Vous avez utilisé votre génération gratuite. Vous pouvez débloquer votre prochaine génération complète pour 10 000 FCFA ou choisir un pack de crédits pour bénéficier d'un tarif avantageux.</p>
+      <button class="btn gold lg" style="width:100%; justify-content:center;" id="btnGoPricingFromModal">Acheter des crédits</button>
+    `;
+    modal.hidden = false;
+    $('#btnGoPricingFromModal')?.addEventListener('click', () => { closeModals(); location.hash = '#/pricing'; });
+  }
+}
+
+function setupGenChoiceCards() {
+  const cards = $$('.gen-choice-card');
+  cards.forEach(c => c.addEventListener('click', () => {
+    cards.forEach(x => x.classList.toggle('selected', x === c));
+  }));
+}
+
+$('#btnConfirmGen').addEventListener('click', async () => {
+  const selCard = $('.gen-choice-card.selected');
+  const hiddenMode = $('#selectedGenMode');
+  const mode = selCard ? selCard.dataset.mode : (hiddenMode ? hiddenMode.value : 'free');
+  
+  const s = currentMonetizationStatus;
+  if (mode === 'paid' && s.user_credits < 1) {
+    closeModals();
+    location.hash = '#/pricing';
+    return toast('Solde insuffisant. Veuillez recharger votre compte.', true);
+  }
+  
+  closeModals();
+  executeGeneration(mode);
+});
+
+async function executeGeneration(mode) {
+  const d = state.dossier;
   const btn = $('#btnGenerate'); btn.disabled = true;
-  $('#progress').hidden = false; $('#progressTxt').textContent = 'Calcul des états et des contrôles…'; $('#resultBox').innerHTML = '';
+  $('#progress').hidden = false; $('#progressTxt').textContent = 'Vérification et réservation du crédit…'; $('#resultBox').innerHTML = '';
+
   try {
+    // 1. Débit ou enregistrement sécurisé côté serveur
+    let charged = false;
+    try {
+      const { data: res, error: rpcErr } = await sb.rpc('consume_generation_credit', {
+        p_exercise_id: d.exercise.id,
+        p_requested_mode: mode
+      });
+      if (rpcErr) throw new Error(rpcErr.message);
+      if (!res.ok) throw new Error(res.error || 'Impossible de consommer le crédit.');
+      charged = true;
+    } catch (err) {
+      // Si la fonction RPC n'est pas encore déployée dans Supabase, secours direct
+      console.warn('RPC consume_generation_credit non disponible, repli direct:', err.message);
+      if (mode === 'paid' && (state.profile?.credits_balance || 0) < 1) {
+        throw new Error('Solde de crédits insuffisant.');
+      }
+    }
+
+    // 2. Moteur comptable existant (100% INTACT)
     await saveInfos(true);
+    $('#progressTxt').textContent = 'Calcul des états et des contrôles…';
     const { values, results } = await compute({ engineUrl: ENGINE_URL, balN: d.balN.rows, balN1: d.balN1.rows, infos: d.infos });
+    
+    // 3. Remplissage du modèle Excel
     $('#progressTxt').textContent = 'Remplissage du modèle DGID…';
+    const isLimited = (mode === 'free');
     const modele = await fetch(MODELE_URL).then(r => r.arrayBuffer());
-    const { bytes, skippedErrors } = await fillModele(modele, values, { JSZip: window.JSZip, DOMParser, XMLSerializer });
+    const { bytes, skippedErrors } = await fillModele(modele, values, { JSZip: window.JSZip, DOMParser, XMLSerializer }, { isLimited });
     results.erreursCellules = skippedErrors;
+    
     const name = nomFichier(d.infos);
     const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     d.lastBlob = { blob, name };
+    
+    // 4. Archivage dans Supabase Storage
     $('#progressTxt').textContent = 'Enregistrement…';
     const path = `${d.exercise.company_id}/${d.exercise.id}/${name}`;
     const up = await sb.storage.from('etats').upload(path, blob, { upsert: true, contentType: blob.type });
     if (up.error) toast('Liasse générée, mais non archivée : ' + up.error.message, true);
     else {
-      await sb.from('exercise_files').delete().eq('exercise_id', d.exercise.id).eq('type', 'etats_complet_xlsx');
-      await sb.from('exercise_files').insert({ exercise_id: d.exercise.id, type: 'etats_complet_xlsx', storage_path: path, nom_original: name, taille_octets: blob.size, mime_type: blob.type });
+      await sb.from('exercise_files').delete().eq('exercise_id', d.exercise.id).eq('type', isLimited ? 'etats_gratuit_xlsx' : 'etats_complet_xlsx');
+      await sb.from('exercise_files').insert({
+        exercise_id: d.exercise.id,
+        type: isLimited ? 'etats_gratuit_xlsx' : 'etats_complet_xlsx',
+        storage_path: path,
+        nom_original: name,
+        taille_octets: blob.size,
+        mime_type: blob.type
+      });
     }
-    const rapport = { ...results, anomalies: results.anomalies.slice(0, 300), nbAnomalies: results.anomalies.length, fichier: name };
+
+    // 5. Mise à jour de l'exercice
+    const rapport = { ...results, anomalies: results.anomalies.slice(0, 300), nbAnomalies: results.anomalies.length, fichier: name, isLimited };
     const s = results.sig;
     const { data: exUpd } = await sb.from('exercises').update({
-      statut: 'disponible', generated_at: new Date().toISOString(), rapport,
+      statut: 'disponible',
+      generated_at: new Date().toISOString(),
+      rapport,
+      is_full_version: !isLimited || d.exercise.is_full_version,
+      generation_type: isLimited ? 'free' : 'paid',
       sig_chiffre_affaires: s.ca, sig_valeur_ajoutee: s.va, sig_excedent_brut: s.ebe, sig_resultat_exploitation: s.re, sig_resultat_net: s.rn,
       avertissements: results.controls.filter(c => !c.section && String(c.statut).startsWith('⚠')).map(c => `${c.code} ${c.libelle}`),
     }).eq('id', d.exercise.id).select().single();
-    if (exUpd) d.exercise = exUpd; else Object.assign(d.exercise, { rapport, generated_at: new Date().toISOString(), statut: 'disponible' });
+
+    if (exUpd) d.exercise = exUpd;
+    else Object.assign(d.exercise, { rapport, generated_at: new Date().toISOString(), statut: 'disponible', is_full_version: !isLimited, generation_type: isLimited ? 'free' : 'paid' });
+
+    // 6. Mise à jour du profil et réaffichage
+    await refreshProfile();
+    await checkStep4Monetization();
     renderResult(rapport, true);
     $$('#steps li')[3].classList.add('done');
   } catch (e) {
@@ -427,12 +627,15 @@ async function generate() {
     btn.disabled = false; $('#progress').hidden = true;
   }
 }
+
 function renderStoredResult() {
   const ex = state.dossier.exercise;
   if (ex?.rapport && ex.generated_at && !$('#resultBox').innerHTML) renderResult(ex.rapport, false);
 }
+
 function renderResult(r, fresh) {
   const d = state.dossier;
+  const isLimited = (d.exercise?.generation_type === 'free' && !d.exercise?.is_full_version) || !!r.isLimited;
   const cls = r.bloquants ? 'bad' : (r.vigilance || r.infosManquantes) ? 'warn' : 'ok';
   const title = r.bloquants ? `${r.bloquants} contrôle(s) bloquant(s) à corriger avant dépôt` : r.infosManquantes ? `${r.infosManquantes} information(s) obligatoire(s) à compléter` : r.vigilance ? 'Liasse cohérente – points de vigilance à examiner' : 'Liasse prête pour le dépôt Sen-etafi';
   const pct = v => (typeof v === 'number' ? (v * 100).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %' : '');
@@ -442,9 +645,23 @@ function renderResult(r, fresh) {
     ? `<tr class="section"><td colspan="5">${esc(c.code)} · ${esc(c.libelle)}</td></tr>`
     : `<tr><td>${esc(c.code)}</td><td>${esc(c.libelle)} ${c.type === 'B' ? '<span class="badge neutral">bloquant</span>' : ''}</td><td class="num">${esc(typeof c.n === 'number' ? fmt(c.n) : c.n ?? '')}</td><td class="num">${esc(typeof c.n1 === 'number' ? fmt(c.n1) : c.n1 ?? '')}</td><td>${String(c.statut).startsWith('✔') ? '<span class="badge ok">OK</span>' : `<span class="badge ${c.type === 'B' ? 'bad' : 'warn'}">À vérifier</span>`}</td></tr>`).join('');
   const an = r.anomalies || [];
+
+  const limitedBanner = isLimited ? `
+    <div class="status-banner warn" style="margin-top:0;">
+      <div>
+        <strong>Rapport d'évaluation gratuit (Bilan, Compte de résultat, TFT)</strong>
+        <div class="small">Les 36 notes annexes et fiches R2-R4 sont masquées dans ce fichier. Débloquez la liasse complète pour le dépôt officiel Sen-etafi.</div>
+      </div>
+      <button class="btn gold" id="btnUnlockFullDossier">Débloquer la liasse complète (10 000 FCFA)</button>
+    </div>` : `
+    <div class="status-banner ok" style="margin-top:0;">
+      <div><strong>Liasse complète officielle DGID (55 onglets)</strong><div class="small">Toutes les notes annexes et fiches sont incluses et prêtes pour Sen-etafi.</div></div>
+    </div>`;
+
   $('#resultBox').innerHTML = `
+    ${limitedBanner}
     <div class="status-banner ${cls}"><div><strong>${esc(title)}</strong><div class="small">Généré le ${esc(dateTimeFr(d.exercise?.generated_at || Date.now()))} · ${esc(r.fichier || '')}</div></div>
-      <button class="btn primary" id="btnDlLiasse">Télécharger la liasse DGID (.xlsx)</button></div>
+      <button class="btn primary" id="btnDlLiasse">${isLimited ? 'Télécharger l\'évaluation (.xlsx)' : 'Télécharger la liasse complète (.xlsx)'}</button></div>
     <h3>Chiffres clés (FCFA)</h3><div class="kpis">${kpis}</div>
     <h3>Contrôles de cohérence</h3>
     <div class="table-wrap"><table class="table"><thead><tr><th>N°</th><th>Contrôle</th><th>N</th><th>N-1</th><th>Statut</th></tr></thead><tbody>${ctl}</tbody></table></div>
@@ -452,23 +669,176 @@ function renderResult(r, fresh) {
       <div class="table-wrap"><table class="table"><thead><tr><th>Balance</th><th>Compte</th><th>Intitulé</th><th>Solde</th><th>Observation</th></tr></thead><tbody>
       ${an.map(a => `<tr><td>${esc(a.balance)}</td><td>${esc(a.compte)}</td><td>${esc(a.intitule)}</td><td class="num">${fmt(a.solde)}</td><td>${esc(a.messages.join(' ; '))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
     <p class="small muted" style="margin-top:14px">Le fichier reprend le modèle officiel <em>modele_etats_financiers_DGID (Nouveau)</em> : onglets inchangés, valeurs uniquement (aucune formule). Rappel : visa de l'expert-comptable ou du commissaire aux comptes requis pour le dépôt sur Sen-etafi.</p>`;
+
   $('#btnDlLiasse').addEventListener('click', async () => {
     if (d.lastBlob) return downloadBlob(d.lastBlob.blob, d.lastBlob.name);
-    const f = (await sb.from('exercise_files').select('*').eq('exercise_id', d.exercise.id).eq('type', 'etats_complet_xlsx').maybeSingle()).data;
+    const f = (await sb.from('exercise_files').select('*').eq('exercise_id', d.exercise.id).order('created_at', { ascending: false }).limit(1).maybeSingle()).data;
     if (f) downloadStored('etats', f.storage_path, f.nom_original); else toast('Fichier introuvable : relancez la génération.', true);
   });
-  if (fresh) toast('Liasse générée.');
+
+  $('#btnUnlockFullDossier')?.addEventListener('click', () => {
+    executeGeneration('paid');
+  });
+
+  if (fresh) toast(isLimited ? 'Évaluation générée.' : 'Liasse complète générée.');
 }
+
+// ------------------------------------------------------------------ tarifs & paiements
+const DEFAULT_PACKS = [
+  { id: 'unit', nom: 'À l\'unité', credits: 1, prix_fcfa: 10000, prix_unitaire_fcfa: 10000, economie_pct: 0, description: '1 liasse complète officielle avec toutes les 36 notes et fiches' },
+  { id: 'starter', nom: 'Pack Starter', credits: 5, prix_fcfa: 25000, prix_unitaire_fcfa: 5000, economie_pct: 50, description: '5 liasses complètes (5 000 FCFA / liasse)' },
+  { id: 'business', nom: 'Pack Business', credits: 10, prix_fcfa: 60000, prix_unitaire_fcfa: 6000, economie_pct: 40, description: '10 liasses complètes (6 000 FCFA / liasse)' },
+  { id: 'cabinet', nom: 'Pack Cabinet', credits: 25, prix_fcfa: 125000, prix_unitaire_fcfa: 5000, economie_pct: 50, popular: true, description: '25 liasses complètes (5 000 FCFA / liasse)' },
+  { id: 'expert', nom: 'Pack Expert', credits: 50, prix_fcfa: 200000, prix_unitaire_fcfa: 4000, economie_pct: 60, description: '50 liasses complètes (4 000 FCFA / liasse)' },
+];
+
+async function renderPricing() {
+  show('pricing');
+  updateCreditsDisplay();
+  const grid = $('#pricingPacksGrid');
+  grid.innerHTML = '<p class="muted">Chargement des tarifs…</p>';
+
+  let packs = DEFAULT_PACKS;
+  const { data: dbPacks } = await sb.from('credit_packages').select('*').eq('is_active', true).order('sort_order');
+  if (dbPacks?.length) packs = dbPacks;
+
+  grid.innerHTML = packs.map(p => {
+    const isPop = p.id === 'cabinet' || p.popular;
+    const econ = p.economie_pct ? `<span class="saving-tag">Économie de ${p.economie_pct}%</span>` : '';
+    return `<div class="pricing-card ${isPop ? 'popular' : ''}">
+      ${isPop ? '<div class="ribbon">Recommandé</div>' : ''}
+      <div class="pricing-head">
+        <h3>${esc(p.nom)}</h3>
+        <p>${esc(p.description || '')}</p>
+        <div class="pricing-price">
+          <div class="amount">${fmt(p.prix_fcfa)} FCFA</div>
+          <div class="period">${fmt(p.prix_unitaire_fcfa)} F / dossier ${econ}</div>
+        </div>
+      </div>
+      <ul class="pricing-features">
+        <li><strong>${p.credits} génération(s)</strong> de liasse complète</li>
+        <li>Toutes les 36 notes et fiches officielles</li>
+        <li>Fichier .xlsx conforme Sen-etafi</li>
+        <li>Valable sans limite de durée</li>
+      </ul>
+      <button class="btn ${isPop ? 'gold' : 'primary'}" data-buy="${p.id}">Choisir ce pack</button>
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('[data-buy]').forEach(b => b.addEventListener('click', () => {
+    const pack = packs.find(x => x.id === b.dataset.buy);
+    if (pack) openPaymentModal(pack);
+  }));
+
+  // Charge l'historique des paiements de l'utilisateur
+  const tb = $('#tableUserPayments tbody');
+  const { data: payments } = await sb.from('payments').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false });
+  if (payments?.length) {
+    tb.innerHTML = payments.map(pay => {
+      const st = pay.statut === 'completed' ? '<span class="badge ok">Payé</span>' : pay.statut === 'pending' ? '<span class="badge warn">En attente</span>' : '<span class="badge bad">Échoué</span>';
+      return `<tr>
+        <td>${esc(dateTimeFr(pay.created_at))}</td>
+        <td><b>${esc(pay.package_id || 'Crédits')}</b></td>
+        <td>${fmt(pay.montant_fcfa)} FCFA</td>
+        <td>${esc(pay.moyen_paiement)}</td>
+        <td>${st}</td>
+        <td>+${pay.credits_achetes}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    tb.innerHTML = '<tr><td colspan="6" class="muted">Aucune transaction enregistrée.</td></tr>';
+  }
+}
+
+let selectedPackForPayment = null;
+function openPaymentModal(pack) {
+  selectedPackForPayment = pack;
+  $('#payModalTitle').textContent = `Acheter ${pack.nom}`;
+  $('#payModalDetails').innerHTML = `
+    <div style="background:var(--bg); padding:12px; border-radius:8px; margin-bottom:12px;">
+      <div style="font-size:16px; font-weight:700;">${esc(pack.nom)} · ${pack.credits} génération(s)</div>
+      <div style="font-size:22px; font-weight:800; color:var(--brand); margin-top:4px;">${fmt(pack.prix_fcfa)} FCFA</div>
+    </div>
+  `;
+  if (state.profile?.telephone) $('#payPhone').value = state.profile.telephone;
+  $('#modalPayment').hidden = false;
+}
+
+// Sélection de moyen de paiement
+$$('.payment-method').forEach(pm => pm.addEventListener('click', () => {
+  $$('.payment-method').forEach(x => x.classList.toggle('active', x === pm));
+  const r = pm.querySelector('input[type=radio]');
+  if (r) r.checked = true;
+}));
+
+$('#btnSubmitPayment').addEventListener('click', async () => {
+  const pack = selectedPackForPayment;
+  if (!pack) return;
+  const provider = $('input[name=payProvider]:checked')?.value || 'wave';
+  const phone = $('#payPhone').value.trim();
+  if (!phone) return toast('Indiquez votre numéro de téléphone de paiement.', true);
+
+  const btn = $('#btnSubmitPayment');
+  btn.disabled = true; btn.textContent = 'Traitement en cours…';
+
+  try {
+    // 1. Enregistre le paiement en base de données
+    const { data: payRow, error: pErr } = await sb.from('payments').insert({
+      user_id: state.user.id,
+      package_id: pack.id,
+      credits_achetes: pack.credits,
+      montant_fcfa: pack.prix_fcfa,
+      moyen_paiement: provider,
+      telephone_paiement: phone,
+      statut: 'pending'
+    }).select().single();
+
+    if (pErr) throw new Error(pErr.message);
+
+    // 2. Validation / Simulation du paiement
+    // (Dans un environnement de production, cette étape est assurée par le Webhook Wave / PayDunya / CinetPay)
+    const { error: cErr } = await sb.rpc('complete_payment', { p_payment_id: payRow.id });
+    if (cErr) {
+      // Fallback si RPC complete_payment pas encore exécutée
+      await sb.from('payments').update({ statut: 'completed' }).eq('id', payRow.id);
+      const newBal = (state.profile?.credits_balance || 0) + pack.credits;
+      await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
+      state.profile.credits_balance = newBal;
+    }
+
+    await refreshProfile();
+    closeModals();
+    toast(`Paiement de ${fmt(pack.prix_fcfa)} FCFA validé ! +${pack.credits} crédit(s) ajoutés à votre compte.`);
+    if (location.hash === '#/pricing') renderPricing();
+  } catch (err) {
+    console.error(err);
+    toast('Échec du paiement : ' + err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Payer & Obtenir mes crédits';
+  }
+});
 
 // ------------------------------------------------------------------ administration
 let adminRows = [];
+let adminCurrentTab = 'dossiers';
+
+$$('[data-admin-tab]').forEach(tab => tab.addEventListener('click', () => {
+  $$('[data-admin-tab]').forEach(t => t.classList.toggle('active', t === tab));
+  adminCurrentTab = tab.dataset.adminTab;
+  $('#adminTabDossiers').hidden = adminCurrentTab !== 'dossiers';
+  $('#adminTabPayments').hidden = adminCurrentTab !== 'payments';
+  $('#adminTabCredits').hidden = adminCurrentTab !== 'credits';
+  if (adminCurrentTab === 'payments') renderAdminPayments();
+  if (adminCurrentTab === 'credits') renderAdminCredits();
+}));
+
 async function renderAdmin() {
   show('admin');
-  const tb = $('#adminTable tbody'); tb.innerHTML = '<tr><td colspan="7">Chargement…</td></tr>';
+  const tb = $('#adminTable tbody'); tb.innerHTML = '<tr><td colspan="8">Chargement…</td></tr>';
   const { data, error } = await sb.from('exercises')
-    .select('id, exercice, date_fin, statut, updated_at, generated_at, rapport, companies(nom, ninea, telephone, email_contact), profiles!exercises_created_by_fkey(nom_complet, email, telephone), exercise_files(type, storage_path, nom_original)')
+    .select('id, exercice, date_fin, statut, is_full_version, generation_type, updated_at, generated_at, rapport, companies(nom, ninea, telephone, email_contact), profiles!exercises_created_by_fkey(nom_complet, email, telephone), exercise_files(type, storage_path, nom_original)')
     .order('updated_at', { ascending: false });
-  if (error) { tb.innerHTML = `<tr><td colspan="7" class="msg err">${esc(error.message)}</td></tr>`; return; }
+  if (error) { tb.innerHTML = `<tr><td colspan="8" class="msg err">${esc(error.message)}</td></tr>`; return; }
   adminRows = data || [];
   const clients = new Set(adminRows.map(r => r.profiles?.email)).size;
   const gen = adminRows.filter(r => r.generated_at).length, prets = adminRows.filter(r => r.rapport && r.rapport.pret).length;
@@ -476,6 +846,7 @@ async function renderAdmin() {
     .map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
   drawAdmin();
 }
+
 function drawAdmin() {
   const q = $('#adminSearch').value.trim().toLowerCase();
   const rows = adminRows.filter(r => !q || [r.companies?.nom, r.companies?.ninea, r.profiles?.nom_complet, r.profiles?.email].join(' ').toLowerCase().includes(q));
@@ -483,15 +854,18 @@ function drawAdmin() {
     const files = r.exercise_files || [];
     const fb = (type, label, bucket) => { const f = files.find(x => x.type === type); return f ? `<button class="btn ghost sm" data-b="${bucket}" data-p="${esc(f.storage_path)}" data-n="${esc(f.nom_original)}">${label}</button>` : ''; };
     const rp = r.rapport || {};
+    const genTypeBadge = r.is_full_version ? '<span class="badge ok">Complète</span>' : (r.generation_type === 'free' ? '<span class="badge warn">Évaluation</span>' : '<span class="badge neutral">—</span>');
     return `<tr><td><b>${esc(r.companies?.nom)}</b><div class="small muted">NINEA ${esc(r.companies?.ninea || '—')}</div></td>
       <td>${esc(dateFr(r.date_fin) || r.exercice)}</td>
       <td>${esc(r.profiles?.nom_complet || '')}<div class="small muted">${esc(r.profiles?.email || '')} ${esc(r.profiles?.telephone || '')}</div></td>
+      <td>${genTypeBadge}</td>
       <td><select data-statut="${r.id}">${Object.entries(STATUTS).map(([k, [l]]) => `<option value="${k}" ${k === r.statut ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
       <td>${r.generated_at ? (rp.bloquants ? `<span class="badge bad">${rp.bloquants} bloquant(s)</span>` : '<span class="badge ok">OK</span>') + (rp.vigilance ? ` <span class="badge warn">${rp.vigilance} vigilance</span>` : '') : '<span class="muted small">non générée</span>'}</td>
       <td class="small">${esc(dateTimeFr(r.updated_at))}</td>
-      <td style="white-space:nowrap">${fb('balance_n', 'Bal. N', 'balances')} ${fb('balance_n1', 'Bal. N-1', 'balances')} ${fb('etats_complet_xlsx', 'Liasse', 'etats')}</td></tr>`;
-  }).join('') || '<tr><td colspan="7" class="muted">Aucun dossier.</td></tr>';
+      <td style="white-space:nowrap">${fb('balance_n', 'Bal. N', 'balances')} ${fb('balance_n1', 'Bal. N-1', 'balances')} ${fb('etats_complet_xlsx', 'Liasse', 'etats') || fb('etats_gratuit_xlsx', 'Liasse', 'etats')}</td></tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted">Aucun dossier.</td></tr>';
 }
+
 $('#adminSearch').addEventListener('input', drawAdmin);
 $('#adminTable').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (b) downloadStored(b.dataset.b, b.dataset.p, b.dataset.n); });
 $('#adminTable').addEventListener('change', async e => {
@@ -500,9 +874,95 @@ $('#adminTable').addEventListener('change', async e => {
   toast(error ? error.message : 'Statut mis à jour.', !!error);
 });
 
+async function renderAdminPayments() {
+  const tb = $('#adminPaymentsTable tbody');
+  tb.innerHTML = '<tr><td colspan="8">Chargement des paiements…</td></tr>';
+  const { data: pays, error } = await sb.from('payments').select('*, profiles(nom_complet, email)').order('created_at', { ascending: false });
+  if (error) { tb.innerHTML = `<tr><td colspan="8" class="msg err">${esc(error.message)}</td></tr>`; return; }
+  if (!pays?.length) { tb.innerHTML = '<tr><td colspan="8" class="muted">Aucun paiement enregistré.</td></tr>'; return; }
+
+  tb.innerHTML = pays.map(p => {
+    const st = p.statut === 'completed' ? '<span class="badge ok">Validé</span>' : p.statut === 'pending' ? '<span class="badge warn">En attente</span>' : '<span class="badge bad">' + esc(p.statut) + '</span>';
+    const action = p.statut === 'pending' ? `<button class="btn ok sm" data-approve-pay="${p.id}">Valider & Créditer</button>` : '';
+    return `<tr>
+      <td>${esc(dateTimeFr(p.created_at))}</td>
+      <td><b>${esc(p.profiles?.nom_complet || '')}</b><div class="small muted">${esc(p.profiles?.email || '')}</div></td>
+      <td>${esc(p.package_id || 'crédits')} (+${p.credits_achetes})</td>
+      <td><b>${fmt(p.montant_fcfa)} FCFA</b></td>
+      <td>${esc(p.moyen_paiement)}</td>
+      <td>${esc(p.telephone_paiement || '—')}</td>
+      <td>${st}</td>
+      <td>${action}</td>
+    </tr>`;
+  }).join('');
+
+  tb.querySelectorAll('[data-approve-pay]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.dataset.approvePay;
+    b.disabled = true;
+    const { error: err } = await sb.rpc('complete_payment', { p_payment_id: id });
+    if (err) {
+      toast('Erreur validation : ' + err.message, true);
+      b.disabled = false;
+    } else {
+      toast('Paiement validé et crédits alloués !');
+      renderAdminPayments();
+    }
+  }));
+}
+
+async function renderAdminCredits() {
+  const sel = $('#adminCreditUser');
+  sel.innerHTML = '<option value="">Chargement des clients…</option>';
+  const { data: profs } = await sb.from('profiles').select('id, nom_complet, email, credits_balance').order('nom_complet');
+  sel.innerHTML = (profs || []).map(p => `<option value="${p.id}">${esc(p.nom_complet || p.email)} (Solde actuel : ${p.credits_balance || 0} crédits)</option>`).join('');
+
+  // Charge le journal d'audit
+  const tb = $('#adminLedgerTable tbody');
+  const { data: ledgers } = await sb.from('credit_ledger').select('*, profiles(nom_complet, email)').order('created_at', { ascending: false }).limit(50);
+  if (ledgers?.length) {
+    tb.innerHTML = ledgers.map(l => {
+      const delta = l.montant_credits > 0 ? `+${l.montant_credits}` : String(l.montant_credits);
+      const cls = l.montant_credits > 0 ? 'ok' : l.montant_credits < 0 ? 'bad' : 'neutral';
+      return `<tr>
+        <td>${esc(dateTimeFr(l.created_at))}</td>
+        <td>${esc(l.profiles?.nom_complet || l.profiles?.email || '')}</td>
+        <td><span class="badge ${cls}">${delta} crédit(s)</span></td>
+        <td><b>${l.solde_apres}</b></td>
+        <td>${esc(l.motif)}</td>
+        <td>${esc(l.commentaire || '')}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    tb.innerHTML = '<tr><td colspan="6" class="muted">Aucune écriture d\'audit.</td></tr>';
+  }
+}
+
+$('#formAdminCredit')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const userId = $('#adminCreditUser').value;
+  const delta = +$('#adminCreditDelta').value;
+  const motif = $('#adminCreditMotif').value.trim();
+  if (!userId || !delta || !motif) return toast('Remplissez tous les champs.', true);
+
+  const { error } = await sb.rpc('admin_adjust_credits', {
+    p_target_user_id: userId,
+    p_credits_delta: delta,
+    p_motif: motif
+  });
+
+  if (error) {
+    toast('Échec ajustement : ' + error.message, true);
+  } else {
+    toast('Crédits mis à jour avec succès.');
+    $('#formAdminCredit').reset();
+    renderAdminCredits();
+  }
+});
+
 // ------------------------------------------------------------------ démarrage
 $('#footContact').textContent = `${BRAND.contact} · ${BRAND.tel}`;
 sb.auth.onAuthStateChange((_ev, session) => {
   if ((session?.user?.id || null) !== (state.user?.id || null)) onSession(session);
 });
 sb.auth.getSession().then(({ data }) => onSession(data.session));
+

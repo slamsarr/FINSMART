@@ -1,0 +1,10 @@
+{
+  "name": "finsmart-saas-etats-financiers",
+  "version": "1.0.0",
+  "description": "FINSMART – SaaS États financiers DGID (SYSCOHADA)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "tunnel": "npx localtunnel --port 3000"
+  }
+}

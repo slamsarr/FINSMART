@@ -13,7 +13,9 @@
   <div class="brand"><span class="logo" aria-hidden="true">F</span><span><strong>FINSMART</strong><small>États financiers SYSCOHADA · DGID</small></span></div>
   <nav id="nav" hidden>
     <button class="link" data-go="dashboard">Mes dossiers</button>
+    <button class="link" data-go="pricing">Tarifs & Crédits</button>
     <button class="link" data-go="admin" id="navAdmin" hidden>Administration</button>
+    <span class="badge gold" id="userCreditsBadge" style="cursor:pointer;" title="Cliquez pour recharger vos crédits">0 crédit</span>
     <span class="who" id="whoami"></span>
     <button class="btn ghost sm" id="btnLogout">Déconnexion</button>
   </nav>
@@ -146,6 +148,7 @@
     <!-- étape 4 -->
     <div class="step-panel" data-panel="4" hidden>
       <div class="card">
+        <div id="dossierMonetizationNotice" style="margin-bottom:14px;"></div>
         <div class="row-between">
           <div><h2>Génération de la liasse</h2><p class="muted">Calcul des états, contrôles de cohérence et remplissage du modèle officiel DGID (valeurs seules, sans formules).</p></div>
           <button class="btn primary lg" id="btnGenerate">Générer les états financiers</button>
@@ -156,16 +159,136 @@
     </div>
   </section>
 
+  <!-- ======================= TARIFS & CRÉDITS ======================= -->
+  <section id="view-pricing" class="view" hidden>
+    <div class="page-head">
+      <div>
+        <h1>Tarifs & Packs de crédits</h1>
+        <p class="muted">Achetez vos crédits pour débloquer les liasses complètes (55 onglets SYSCOHADA conformes Sen-etafi).</p>
+      </div>
+      <div style="text-align:right">
+        <span class="muted small">Votre solde :</span>
+        <div style="font-size:20px; font-weight:800; color:var(--brand);" id="pricingUserBalance">0 crédit</div>
+      </div>
+    </div>
+
+    <div class="status-banner ok" id="pricingFreeInfoBanner">
+      <div>
+        <strong>1 Génération gratuite offerte par entreprise</strong>
+        <p class="small muted" style="margin:2px 0 0;">Permet d'évaluer le Bilan, Compte de résultat et TFT. Les 36 notes et fiches sont incluses dans la version complète.</p>
+      </div>
+    </div>
+
+    <div class="pricing-grid" id="pricingPacksGrid">
+      <!-- Rendu dynamique par JS -->
+    </div>
+
+    <div class="card" style="margin-top:24px;">
+      <h2>Historique de vos achats & transactions</h2>
+      <div class="table-wrap" style="margin-top:12px;">
+        <table class="table" id="tableUserPayments">
+          <thead><tr><th>Date</th><th>Opération / Pack</th><th>Montant</th><th>Moyen</th><th>Statut</th><th>Crédits</th></tr></thead>
+          <tbody><tr><td colspan="6" class="muted">Aucune transaction enregistrée.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <!-- ======================= ADMIN ======================= -->
   <section id="view-admin" class="view" hidden>
     <div class="page-head">
-      <div><h1>Administration FINSMART</h1><p class="muted">Tous les dossiers clients.</p></div>
-      <input id="adminSearch" class="search" placeholder="Rechercher entreprise, NINEA, client…">
+      <div><h1>Administration FINSMART</h1><p class="muted">Dossiers clients, paiements et gestion des crédits.</p></div>
+      <div class="tabs" style="margin-bottom:0;" id="adminTabs">
+        <button class="tab active" data-admin-tab="dossiers">Dossiers clients</button>
+        <button class="tab" data-admin-tab="payments">Paiements & Commandes</button>
+        <button class="tab" data-admin-tab="credits">Attribution de crédits</button>
+      </div>
     </div>
-    <div class="kpis" id="adminKpis"></div>
-    <div class="table-wrap"><table class="table" id="adminTable"><thead><tr><th>Entreprise</th><th>Exercice</th><th>Client</th><th>Statut</th><th>Contrôles</th><th>Mis à jour</th><th></th></tr></thead><tbody></tbody></table></div>
+
+    <!-- Onglet 1 : Dossiers -->
+    <div id="adminTabDossiers">
+      <div style="margin-bottom:14px;"><input id="adminSearch" class="search" placeholder="Rechercher entreprise, NINEA, client…"></div>
+      <div class="kpis" id="adminKpis"></div>
+      <div class="table-wrap"><table class="table" id="adminTable"><thead><tr><th>Entreprise</th><th>Exercice</th><th>Client</th><th>Type</th><th>Statut</th><th>Contrôles</th><th>Mis à jour</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- Onglet 2 : Paiements -->
+    <div id="adminTabPayments" hidden>
+      <div class="table-wrap"><table class="table" id="adminPaymentsTable"><thead><tr><th>Date</th><th>Client</th><th>Pack</th><th>Montant</th><th>Moyen / Réf</th><th>Téléphone</th><th>Statut</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <!-- Onglet 3 : Attribution manuelle de crédits -->
+    <div id="adminTabCredits" hidden>
+      <div class="card" style="max-width:600px;">
+        <h2>Attribuer des crédits à un client</h2>
+        <p class="muted small">Ajoutez ou déduisez des crédits manuellement (ex: règlement par chèque, virement ou geste commercial).</p>
+        <form id="formAdminCredit" class="stack" style="margin-top:14px;">
+          <label>Sélectionner le client<select id="adminCreditUser" required></select></label>
+          <label>Nombre de crédits (positif pour ajouter, négatif pour déduire)<input type="number" id="adminCreditDelta" required value="5"></label>
+          <label>Motif / Justification<input id="adminCreditMotif" required placeholder="ex: Paiement par virement bancaire"></label>
+          <button class="btn primary" type="submit">Enregistrer l'ajustement</button>
+        </form>
+      </div>
+      <div class="card" style="margin-top:20px;">
+        <h2>Journal des mouvements de crédits (Audit)</h2>
+        <div class="table-wrap" style="margin-top:12px;"><table class="table" id="adminLedgerTable"><thead><tr><th>Date</th><th>Client</th><th>Mouvement</th><th>Solde après</th><th>Motif</th><th>Détails</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
   </section>
 </main>
+
+<!-- ======================= MODALE CHOIX DE GÉNÉRATION ======================= -->
+<div class="modal-overlay" id="modalPreGen" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Options de génération de la liasse</h2>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body" id="preGenBody">
+      <!-- Rempli dynamiquement selon l'éligibilité -->
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close-modal>Annuler</button>
+      <button class="btn primary" id="btnConfirmGen">Continuer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= MODALE DE PAIEMENT ======================= -->
+<div class="modal-overlay" id="modalPayment" hidden>
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="payModalTitle">Acheter des crédits</h2>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="payModalDetails" style="margin-bottom:14px;"></div>
+      <label>Sélectionnez votre moyen de paiement au Sénégal :</label>
+      <div class="payment-methods">
+        <label class="payment-method active">
+          <input type="radio" name="payProvider" value="wave" checked> Wave
+        </label>
+        <label class="payment-method">
+          <input type="radio" name="payProvider" value="orange_money"> Orange Money
+        </label>
+        <label class="payment-method">
+          <input type="radio" name="payProvider" value="free_money"> Free Money
+        </label>
+        <label class="payment-method">
+          <input type="radio" name="payProvider" value="carte"> Carte bancaire
+        </label>
+      </div>
+      <label>Numéro de téléphone pour le débit / notification :
+        <input type="tel" id="payPhone" placeholder="77 000 00 00" required>
+      </label>
+      <p class="small muted" style="margin-top:10px;">Les crédits sont utilisables sans limite de durée sur tous vos dossiers et entreprises.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close-modal>Annuler</button>
+      <button class="btn gold" id="btnSubmitPayment">Payer & Obtenir mes crédits</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <footer class="foot">FINSMART · Conseil financier et outils SYSCOHADA · Sénégal — <span id="footContact"></span></footer>

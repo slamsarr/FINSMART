@@ -21,9 +21,11 @@ function cleanNumber(v) {
  * @param {ArrayBuffer|Uint8Array} modeleBytes  fichier modele_etats_financiers_DGID (Nouveau).xlsx
  * @param {Object<string, Object<string, any>>} values  { feuille: { A1: valeur } }
  * @param {{JSZip:any, DOMParser:any, XMLSerializer:any}} deps
+ * @param {{isLimited?: boolean, allowedSheets?: string[]}} [options]
  * @returns {Promise<{bytes:Uint8Array, written:number, skippedErrors:string[]}>}
  */
-export async function fillModele(modeleBytes, values, deps) {
+export async function fillModele(modeleBytes, values, deps, options = {}) {
+  const { isLimited = false, allowedSheets = ['Page de garde', 'Fiche de renseignement R1', 'BILAN PAYSAGE', 'COMPTE DE RESULTAT', 'FLUX DE TRESORERIE'] } = options;
   const { JSZip, DOMParser, XMLSerializer } = deps;
   const zip = await JSZip.loadAsync(modeleBytes);
   const parser = new DOMParser(), ser = new XMLSerializer();
@@ -80,6 +82,20 @@ export async function fillModele(modeleBytes, values, deps) {
       c.removeAttribute('t'); c.removeAttribute('cm'); c.removeAttribute('vm');
     };
 
+    const isSheetAllowed = !isLimited || allowedSheets.includes(sheetName);
+    if (!isSheetAllowed) {
+      const row = getRow(5);
+      const c = getCell(row, 'C5', 3);
+      clearCell(c);
+      c.setAttribute('t', 'inlineStr');
+      const is = doc.createElementNS(NS, 'is'); const t = doc.createElementNS(NS, 't');
+      t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+      t.appendChild(doc.createTextNode("VERSION D'ÉVALUATION GRATUITE – Débloquez la liasse complète sur FINSMART (10 000 FCFA) pour afficher cette note"));
+      is.appendChild(t); c.appendChild(is);
+      for (const f of Array.from(doc.getElementsByTagName('f'))) f.parentNode.removeChild(f);
+      zip.file(path, ser.serializeToString(doc));
+      continue;
+    }
     const vals = values[sheetName] || {};
     for (const [addr, raw] of Object.entries(vals)) {
       const { row: r, col } = splitAddr(addr);

@@ -54,9 +54,19 @@ $$('[data-auth]').forEach(b => b.addEventListener('click', () => {
 $('#formLogin').addEventListener('submit', async e => {
   e.preventDefault();
   const f = new FormData(e.target);
-  setMsg($('#authMsg'), 'Connexion…');
-  const { error } = await sb.auth.signInWithPassword({ email: f.get('email').trim(), password: f.get('password') });
-  if (error) setMsg($('#authMsg'), /confirm/i.test(error.message) ? 'Adresse email non confirmée : ouvrez le lien reçu par email.' : 'Email ou mot de passe incorrect.', 'err');
+  setMsg($('#authMsg'), 'Connexion en cours…');
+  const { data, error } = await sb.auth.signInWithPassword({ email: f.get('email').trim(), password: f.get('password') });
+  if (error) {
+    console.error('Erreur Supabase Login:', error);
+    if (/confirm/i.test(error.message)) {
+      setMsg($('#authMsg'), 'Adresse email non confirmée : cliquez sur le lien reçu par email, ou désactivez la confirmation dans Supabase.', 'err');
+    } else {
+      setMsg($('#authMsg'), `${error.message === 'Invalid login credentials' ? 'Identifiants invalides ou compte non confirmé.' : error.message}`, 'err');
+    }
+  } else if (data?.session) {
+    setMsg($('#authMsg'), 'Connecté ! Redirection…', 'ok');
+    onSession(data.session);
+  }
 });
 $('#formSignup').addEventListener('submit', async e => {
   e.preventDefault();
@@ -64,10 +74,21 @@ $('#formSignup').addEventListener('submit', async e => {
   setMsg($('#authMsg'), 'Création du compte…');
   const { data, error } = await sb.auth.signUp({
     email: f.get('email').trim(), password: f.get('password'),
-    options: { data: { nom_complet: f.get('nom_complet').trim(), telephone: f.get('telephone').trim() }, emailRedirectTo: location.href.split('#')[0] },
+    options: {
+      data: { nom_complet: f.get('nom_complet').trim(), telephone: f.get('telephone').trim() },
+      emailRedirectTo: location.origin + location.pathname
+    },
   });
-  if (error) return setMsg($('#authMsg'), error.message, 'err');
-  if (!data.session) setMsg($('#authMsg'), 'Compte créé. Confirmez votre adresse via le lien envoyé par email, puis connectez-vous.', 'ok');
+  if (error) {
+    console.error('Erreur Supabase Signup:', error);
+    return setMsg($('#authMsg'), error.message, 'err');
+  }
+  if (data?.session) {
+    setMsg($('#authMsg'), 'Compte créé avec succès ! Connexion…', 'ok');
+    onSession(data.session);
+  } else {
+    setMsg($('#authMsg'), 'Compte créé ! Veuillez confirmer votre adresse email via le lien reçu, puis connectez-vous (ou désactivez "Confirm email" dans Supabase pour connexion directe).', 'ok');
+  }
 });
 $('#btnForgot').addEventListener('click', async () => {
   const email = $('#formLogin [name=email]').value.trim();

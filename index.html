@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FINSMART – États financiers DGID</title>
+<meta name="description" content="Déposez vos balances N et N-1 et téléchargez votre liasse SYSCOHADA Révisé au format du modèle DGID Sen-etafi, déjà remplie.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23123a32'/%3E%3Cpath d='M9 22V10h12M9 16h9' stroke='%23e9b949' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo" aria-hidden="true">F</span><span><strong>FINSMART</strong><small>États financiers SYSCOHADA · DGID</small></span></div>
+  <nav id="nav" hidden>
+    <button class="link" data-go="dashboard">Mes dossiers</button>
+    <button class="link" data-go="admin" id="navAdmin" hidden>Administration</button>
+    <span class="who" id="whoami"></span>
+    <button class="btn ghost sm" id="btnLogout">Déconnexion</button>
+  </nav>
+</header>
+
+<main id="app">
+  <!-- ======================= AUTH ======================= -->
+  <section id="view-auth" class="view auth-view" hidden>
+    <div class="auth-intro">
+      <p class="eyebrow">Liasse SYSCOHADA Révisé · Sen-etafi</p>
+      <h1>Vos états financiers DGID,<br>montés à partir de vos balances.</h1>
+      <ul class="points">
+        <li><b>1</b><span>Déposez la balance N et la balance N-1.</span></li>
+        <li><b>2</b><span>Complétez les informations de la liasse (identification, dirigeants, effectifs…).</span></li>
+        <li><b>3</b><span>Téléchargez le modèle officiel <em>modele_etats_financiers_DGID</em> rempli, en valeurs, prêt pour Sen-etafi.</span></li>
+      </ul>
+      <p class="muted small">Bilan, compte de résultat, tableau des flux de trésorerie, fiches R1 à R4 et notes annexes, avec un rapport de contrôles de cohérence.</p>
+    </div>
+    <div class="card auth-card">
+      <div class="tabs" role="tablist">
+        <button role="tab" class="tab active" data-auth="login">Connexion</button>
+        <button role="tab" class="tab" data-auth="signup">Créer un compte</button>
+      </div>
+      <form id="formLogin" class="stack">
+        <label>Email<input type="email" name="email" required autocomplete="email"></label>
+        <label>Mot de passe<input type="password" name="password" required autocomplete="current-password" minlength="8"></label>
+        <button class="btn primary" type="submit">Se connecter</button>
+        <button class="link small" type="button" id="btnForgot">Mot de passe oublié ?</button>
+      </form>
+      <form id="formSignup" class="stack" hidden>
+        <label>Nom complet<input name="nom_complet" required autocomplete="name"></label>
+        <label>Téléphone<input name="telephone" autocomplete="tel" placeholder="77 000 00 00"></label>
+        <label>Email<input type="email" name="email" required autocomplete="email"></label>
+        <label>Mot de passe (8 caractères min.)<input type="password" name="password" required minlength="8" autocomplete="new-password"></label>
+        <label class="check"><input type="checkbox" name="cgu" required> J'accepte que FINSMART traite mes balances pour produire mes états financiers.</label>
+        <button class="btn primary" type="submit">Créer mon compte</button>
+      </form>
+      <p class="msg" id="authMsg" role="status"></p>
+    </div>
+  </section>
+
+  <!-- ======================= DASHBOARD ======================= -->
+  <section id="view-dashboard" class="view" hidden>
+    <div class="page-head">
+      <div><h1>Mes dossiers</h1><p class="muted">Un dossier = une entreprise et un exercice.</p></div>
+      <button class="btn primary" id="btnNew">+ Nouveau dossier</button>
+    </div>
+    <div id="dossiersList" class="list"></div>
+  </section>
+
+  <!-- ======================= WIZARD ======================= -->
+  <section id="view-dossier" class="view" hidden>
+    <div class="page-head">
+      <div>
+        <button class="link small" data-go="dashboard">← Mes dossiers</button>
+        <h1 id="dossierTitle">Nouveau dossier</h1>
+        <p class="muted" id="dossierSub"></p>
+      </div>
+      <span class="save-state" id="saveState"></span>
+    </div>
+    <ol class="steps" id="steps">
+      <li data-step="1" class="active"><span>1</span>Entreprise</li>
+      <li data-step="2"><span>2</span>Balances</li>
+      <li data-step="3"><span>3</span>Informations</li>
+      <li data-step="4"><span>4</span>Liasse</li>
+    </ol>
+
+    <!-- étape 1 -->
+    <div class="step-panel" data-panel="1">
+      <div class="card">
+        <h2>Entreprise et exercice</h2>
+        <div class="grid2">
+          <label>Entreprise<select id="selCompany"></select></label>
+          <label>Exercice clos le<input type="date" id="exFin" required></label>
+        </div>
+        <div id="newCompany" class="grid2">
+          <label>Dénomination sociale *<input id="coNom" required></label>
+          <label>NINEA *<input id="coNinea" placeholder="0012345 2V3"></label>
+          <label>RCCM<input id="coRc" placeholder="SN-DKR-2015-B-12345"></label>
+          <label>Forme juridique<input id="coForme" placeholder="SARL, SA, SAS, GIE…"></label>
+          <label>Adresse<input id="coAdresse"></label>
+          <label>Téléphone<input id="coTel"></label>
+          <label>Email de contact<input id="coEmail" type="email"></label>
+        </div>
+        <div class="grid2">
+          <label>Début de l'exercice<input type="date" id="exDebut"></label>
+        </div>
+        <div class="actions"><button class="btn primary" id="btnStep1">Enregistrer et continuer</button></div>
+        <p class="msg" id="msgStep1" role="status"></p>
+      </div>
+    </div>
+
+    <!-- étape 2 -->
+    <div class="step-panel" data-panel="2" hidden>
+      <div class="card">
+        <h2>Balances générales</h2>
+        <p class="muted">Format attendu (une ligne par compte, sans ligne de total) :</p>
+        <div class="format-strip" aria-label="Colonnes attendues">
+          <span>Compte</span><span>Intitulé</span><span>Solde ant Dbt</span><span>Solde ant Cdt</span><span>Débit période</span><span>Crédit période</span>
+        </div>
+        <p class="small muted">Balances après inventaire. Fichiers acceptés : .xlsx, .xls, .csv. <button class="link small" id="btnTemplate">Télécharger un modèle de balance vide</button></p>
+        <div class="grid2 uploads">
+          <div class="drop" data-bal="N">
+            <p class="drop-title">Balance N</p>
+            <p class="drop-file" id="fileN">Aucun fichier</p>
+            <label class="btn ghost sm">Choisir un fichier<input type="file" accept=".xlsx,.xls,.csv" data-input="N" hidden></label>
+            <div class="bal-report" id="repN"></div>
+          </div>
+          <div class="drop" data-bal="N1">
+            <p class="drop-title">Balance N-1</p>
+            <p class="drop-file" id="fileN1">Aucun fichier</p>
+            <label class="btn ghost sm">Choisir un fichier<input type="file" accept=".xlsx,.xls,.csv" data-input="N1" hidden></label>
+            <div class="bal-report" id="repN1"></div>
+          </div>
+        </div>
+        <div class="actions"><button class="btn ghost" data-step-go="1">Retour</button><button class="btn primary" id="btnStep2" disabled>Continuer</button></div>
+      </div>
+    </div>
+
+    <!-- étape 3 -->
+    <div class="step-panel" data-panel="3" hidden>
+      <div class="card">
+        <h2>Informations complémentaires de la liasse</h2>
+        <p class="muted">Elles alimentent la page de garde, les fiches R1 à R4, la note 13 (capital) et la note 27B (effectifs). Les champs marqués * sont exigés pour le dépôt. Enregistrement automatique.</p>
+        <form id="formInfos" autocomplete="off"></form>
+        <div class="actions"><button class="btn ghost" data-step-go="2">Retour</button><button class="btn primary" id="btnStep3">Continuer</button></div>
+      </div>
+    </div>
+
+    <!-- étape 4 -->
+    <div class="step-panel" data-panel="4" hidden>
+      <div class="card">
+        <div class="row-between">
+          <div><h2>Génération de la liasse</h2><p class="muted">Calcul des états, contrôles de cohérence et remplissage du modèle officiel DGID (valeurs seules, sans formules).</p></div>
+          <button class="btn primary lg" id="btnGenerate">Générer les états financiers</button>
+        </div>
+        <div class="progress" id="progress" hidden><div class="bar"></div><span id="progressTxt">Calcul…</span></div>
+        <div id="resultBox"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= ADMIN ======================= -->
+  <section id="view-admin" class="view" hidden>
+    <div class="page-head">
+      <div><h1>Administration FINSMART</h1><p class="muted">Tous les dossiers clients.</p></div>
+      <input id="adminSearch" class="search" placeholder="Rechercher entreprise, NINEA, client…">
+    </div>
+    <div class="kpis" id="adminKpis"></div>
+    <div class="table-wrap"><table class="table" id="adminTable"><thead><tr><th>Entreprise</th><th>Exercice</th><th>Client</th><th>Statut</th><th>Contrôles</th><th>Mis à jour</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<footer class="foot">FINSMART · Conseil financier et outils SYSCOHADA · Sénégal — <span id="footContact"></span></footer>
+
+<script src="vendor/supabase.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -58,3 +58,4 @@ Puis republier le dossier `app`. Les onglets du modèle doivent garder la même 
 ## Limite connue
 
 Le calcul se fait dans le navigateur du client. Le moteur (`engine.json`) est donc téléchargé par le navigateur et reste lisible par un utilisateur averti. Pour protéger entièrement la méthode, il faudrait déplacer le calcul sur un serveur, avec le même code.
+

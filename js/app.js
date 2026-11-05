@@ -1049,10 +1049,39 @@ async function renderPricing() {
 
   let packs = DEFAULT_PACKS;
   const { data: dbPacks } = await sb.from('credit_packages').select('*').eq('is_active', true).order('sort_order');
-  if (dbPacks?.length) packs = dbPacks;
+  const isDbOutdated = !dbPacks?.length || dbPacks.some(p => (p.id === 'unit' && p.prix_fcfa === 10000) || p.id === 'expert');
+  if (dbPacks?.length && !isDbOutdated) {
+    packs = dbPacks;
+  }
+
+  // Si l'administrateur est connecté, mise à jour transparente de la table Supabase
+  if (state.profile?.is_admin && isDbOutdated) {
+    (async () => {
+      try {
+        await sb.from('credit_packages').update({ is_active: false }).neq('id', '');
+        for (let i = 0; i < DEFAULT_PACKS.length; i++) {
+          const p = DEFAULT_PACKS[i];
+          await sb.from('credit_packages').upsert({
+            id: p.id,
+            nom: p.nom,
+            credits: p.credits,
+            prix_fcfa: p.prix_fcfa,
+            prix_unitaire_fcfa: p.prix_unitaire_fcfa,
+            economie_pct: p.economie_pct,
+            description: p.description,
+            is_active: true,
+            sort_order: i + 1
+          });
+        }
+      } catch (e) {
+        console.warn('Synchro auto credit_packages:', e.message);
+      }
+    })();
+  }
 
   grid.innerHTML = packs.map(p => {
-    const isPop = p.id === 'cabinet' || p.popular;
+    const isPop = p.id === 'business' || p.popular;
+
     const econ = p.economie_pct ? `<span class="saving-tag">Économie de ${p.economie_pct}%</span>` : '';
     return `<div class="pricing-card ${isPop ? 'popular' : ''}">
       ${isPop ? '<div class="ribbon">Recommandé</div>' : ''}

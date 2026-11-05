@@ -507,7 +507,7 @@ async function checkStep4Monetization() {
     </div>`;
   } else {
     box.innerHTML = `<div class="status-banner warn">
-      <div><strong>Génération gratuite déjà utilisée.</strong><div class="small">Vous avez utilisé votre génération gratuite. Vous pouvez débloquer votre prochaine génération complète pour 10 000 FCFA ou choisir un pack de crédits pour bénéficier d'un tarif avantageux.</div></div>
+      <div><strong>Génération gratuite déjà utilisée.</strong><div class="small">Vous avez utilisé votre génération gratuite. Vous pouvez débloquer votre prochaine génération complète pour 20 000 FCFA ou choisir un pack de crédits pour bénéficier d'un tarif avantageux.</div></div>
       <button class="btn gold sm" type="button" onclick="location.hash='#/pricing'">Acheter des crédits</button>
     </div>`;
   }
@@ -537,7 +537,7 @@ async function promptGeneration() {
         <p>Inclus : Bilan officiel, Compte de résultat, Flux de trésorerie (TFT), chiffres clés et contrôles de cohérence. <i>(Les 36 notes et fiches complémentaires sont masquées).</i></p>
       </div>
       <div class="gen-choice-card" data-mode="paid">
-        <h4><span>Liasse Complète Officielle Sen-etafi</span><span class="badge gold">1 Crédit ou 10 000 FCFA</span></h4>
+        <h4><span>Liasse Complète Officielle Sen-etafi</span><span class="badge gold">1 Crédit ou 20 000 FCFA</span></h4>
         <p>Inclus : Les 55 onglets complets, toutes les 36 notes annexes remplies, conforme au dépôt fiscal officiel DGID. Solde disponible : <b>${s.user_credits} crédit(s)</b>.</p>
       </div>
     `;
@@ -558,13 +558,14 @@ async function promptGeneration() {
       <div class="status-banner warn" style="margin-top:0;">
         <div><strong>Génération gratuite épuisée</strong></div>
       </div>
-      <p style="margin:14px 0 16px;">Vous avez utilisé votre génération gratuite. Vous pouvez débloquer votre prochaine génération complète pour 10 000 FCFA ou choisir un pack de crédits pour bénéficier d'un tarif avantageux.</p>
+      <p style="margin:14px 0 16px;">Vous avez utilisé votre génération gratuite. Vous pouvez débloquer votre prochaine génération complète pour 20 000 FCFA ou choisir un pack de crédits pour bénéficier d'un tarif avantageux.</p>
       <button class="btn gold lg" style="width:100%; justify-content:center;" id="btnGoPricingFromModal">Acheter des crédits</button>
     `;
     modal.hidden = false;
     $('#btnGoPricingFromModal')?.addEventListener('click', () => { closeModals(); location.hash = '#/pricing'; });
   }
 }
+
 
 function setupGenChoiceCards() {
   const cards = $$('.gen-choice-card');
@@ -699,7 +700,7 @@ function renderResult(r, fresh) {
         <strong>Rapport d'évaluation gratuit (Bilan, Compte de résultat, TFT)</strong>
         <div class="small">Les 36 notes annexes et fiches R2-R4 sont masquées dans ce fichier. Débloquez la liasse complète pour le dépôt officiel Sen-etafi.</div>
       </div>
-      <button class="btn gold" id="btnUnlockFullDossier">Débloquer la liasse complète (10 000 FCFA)</button>
+      <button class="btn gold" id="btnUnlockFullDossier">Débloquer la liasse complète (20 000 FCFA)</button>
     </div>` : `
     <div class="status-banner ok" style="margin-top:0;">
       <div><strong>Liasse complète officielle DGID (55 onglets)</strong><div class="small">Toutes les notes annexes et fiches sont incluses et prêtes pour Sen-etafi.</div></div>
@@ -732,14 +733,14 @@ function renderResult(r, fresh) {
 
 // ------------------------------------------------------------------ tarifs & paiements
 const DEFAULT_PACKS = [
-  { id: 'unit', nom: 'À l\'unité', credits: 1, prix_fcfa: 10000, prix_unitaire_fcfa: 10000, economie_pct: 0, description: '1 liasse complète officielle avec toutes les 36 notes et fiches' },
-  { id: 'starter', nom: 'Pack Starter', credits: 5, prix_fcfa: 25000, prix_unitaire_fcfa: 5000, economie_pct: 50, description: '5 liasses complètes (5 000 FCFA / liasse)' },
-  { id: 'business', nom: 'Pack Business', credits: 10, prix_fcfa: 60000, prix_unitaire_fcfa: 6000, economie_pct: 40, description: '10 liasses complètes (6 000 FCFA / liasse)' },
-  { id: 'cabinet', nom: 'Pack Cabinet', credits: 25, prix_fcfa: 125000, prix_unitaire_fcfa: 5000, economie_pct: 50, popular: true, description: '25 liasses complètes (5 000 FCFA / liasse)' },
-  { id: 'expert', nom: 'Pack Expert', credits: 50, prix_fcfa: 200000, prix_unitaire_fcfa: 4000, economie_pct: 60, description: '50 liasses complètes (4 000 FCFA / liasse)' },
+  { id: 'unit', nom: 'Génération à l\'unité', credits: 1, prix_fcfa: 20000, prix_unitaire_fcfa: 20000, economie_pct: 0, description: '1 génération complète officielle avec toutes les 36 notes et fiches' },
+  { id: 'starter', nom: 'Pack Starter', credits: 3, prix_fcfa: 50000, prix_unitaire_fcfa: 16667, economie_pct: 17, description: '3 générations complètes (16 667 FCFA / liasse)' },
+  { id: 'business', nom: 'Pack Business', credits: 10, prix_fcfa: 160000, prix_unitaire_fcfa: 16000, economie_pct: 20, popular: true, description: '10 générations complètes (16 000 FCFA / liasse)' },
+  { id: 'cabinet_expert', nom: 'Pack Cabinet & Pack Expert', credits: 25, prix_fcfa: 400000, prix_unitaire_fcfa: 16000, economie_pct: 20, description: '25 générations complètes (16 000 FCFA / liasse)' },
 ];
 
 async function renderPricing() {
+
   show('pricing');
   updateCreditsDisplay();
   const grid = $('#pricingPacksGrid');

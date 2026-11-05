@@ -90,7 +90,7 @@ export async function fillModele(modeleBytes, values, deps, options = {}) {
       c.setAttribute('t', 'inlineStr');
       const is = doc.createElementNS(NS, 'is'); const t = doc.createElementNS(NS, 't');
       t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-      t.appendChild(doc.createTextNode("VERSION D'ÉVALUATION GRATUITE – Débloquez la liasse complète sur FINSMART (10 000 FCFA) pour afficher cette note"));
+      t.appendChild(doc.createTextNode("VERSION D'ÉVALUATION GRATUITE – Débloquez la liasse complète sur FINSMART (20 000 FCFA) pour afficher cette note"));
       is.appendChild(t); c.appendChild(is);
       for (const f of Array.from(doc.getElementsByTagName('f'))) f.parentNode.removeChild(f);
       zip.file(path, ser.serializeToString(doc));

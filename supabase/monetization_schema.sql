@@ -30,11 +30,10 @@ create table if not exists public.credit_packages (
 -- Insertion / mise à jour des tarifs officiels
 insert into public.credit_packages (id, nom, credits, prix_fcfa, prix_unitaire_fcfa, economie_pct, description, is_active, sort_order)
 values 
-  ('unit', 'Génération à l''unité', 1, 10000, 10000, 0, '1 génération complète avec toutes les 36 notes et fiches officielles', true, 1),
-  ('starter', 'Pack Starter', 5, 25000, 5000, 50, '5 générations complètes (5 000 FCFA / dossier)', true, 2),
-  ('business', 'Pack Business', 10, 60000, 6000, 40, '10 générations complètes (6 000 FCFA / dossier)', true, 3),
-  ('cabinet', 'Pack Cabinet', 25, 125000, 5000, 50, '25 générations complètes (5 000 FCFA / dossier)', true, 4),
-  ('expert', 'Pack Expert', 50, 200000, 4000, 60, '50 générations complètes (4 000 FCFA / dossier)', true, 5)
+  ('unit', 'Génération à l''unité', 1, 20000, 20000, 0, '1 génération complète avec toutes les 36 notes et fiches officielles', true, 1),
+  ('starter', 'Pack Starter', 3, 50000, 16667, 17, '3 générations complètes (16 667 FCFA / liasse)', true, 2),
+  ('business', 'Pack Business', 10, 160000, 16000, 20, '10 générations complètes (16 000 FCFA / liasse)', true, 3),
+  ('cabinet_expert', 'Pack Cabinet & Pack Expert', 25, 400000, 16000, 20, '25 générations complètes (16 000 FCFA / liasse)', true, 4)
 on conflict (id) do update set
   nom = excluded.nom,
   credits = excluded.credits,
@@ -44,6 +43,7 @@ on conflict (id) do update set
   description = excluded.description,
   is_active = excluded.is_active,
   sort_order = excluded.sort_order;
+
 
 -- 3. Table des paiements et commandes
 create table if not exists public.payments (

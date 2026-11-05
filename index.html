@@ -263,25 +263,37 @@
     </div>
     <div class="modal-body">
       <div id="payModalDetails" style="margin-bottom:14px;"></div>
+      
+      <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-bottom:14px; background:#f0fdf4; border:1px solid #bbf7d0; padding:8px 12px; border-radius:6px;">
+        <span style="font-size:16px;">🔒</span>
+        <span>Paiement sécurisé opéré par <strong>PayTech Sénégal</strong> (Wave, Orange Money, Free Money, Carte Bancaire)</span>
+      </div>
+
       <label>Sélectionnez votre moyen de paiement au Sénégal :</label>
       <div class="payment-methods">
         <label class="payment-method active">
-          <input type="radio" name="payProvider" value="wave" checked> Wave
+          <input type="radio" name="payProvider" value="wave" checked>
+          <span>🌊 Wave</span>
         </label>
         <label class="payment-method">
-          <input type="radio" name="payProvider" value="orange_money"> Orange Money
+          <input type="radio" name="payProvider" value="orange_money">
+          <span>🍊 Orange Money</span>
         </label>
         <label class="payment-method">
-          <input type="radio" name="payProvider" value="free_money"> Free Money
+          <input type="radio" name="payProvider" value="free_money">
+          <span>🟢 Free Money</span>
         </label>
         <label class="payment-method">
-          <input type="radio" name="payProvider" value="carte"> Carte bancaire
+          <input type="radio" name="payProvider" value="carte">
+          <span>💳 Carte bancaire</span>
         </label>
       </div>
-      <label>Numéro de téléphone pour le débit / notification :
+
+      <label>Numéro de téléphone mobile money (Sénégal) :
         <input type="tel" id="payPhone" placeholder="77 000 00 00" required>
       </label>
-      <p class="small muted" style="margin-top:10px;">Les crédits sont utilisables sans limite de durée sur tous vos dossiers et entreprises.</p>
+      <div id="payStatusMsg" class="msg" hidden style="margin-top:12px;"></div>
+      <p class="small muted" style="margin-top:10px;">Vos crédits sont valables sans limite de durée sur toutes vos entreprises et tous vos exercices.</p>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" data-close-modal>Annuler</button>
@@ -289,6 +301,7 @@
     </div>
   </div>
 </div>
+
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <footer class="foot">FINSMART · Conseil financier et outils SYSCOHADA · Sénégal — <span id="footContact"></span></footer>

@@ -98,14 +98,40 @@ $('#btnForgot').addEventListener('click', async () => {
 });
 $('#btnLogout').addEventListener('click', async () => { await sb.auth.signOut(); location.hash = ''; });
 
+async function checkPaymentReturnParams() {
+  const url = new URL(window.location.href);
+  const paymentStatus = url.searchParams.get('payment');
+  const ref = url.searchParams.get('ref');
+
+  if (paymentStatus === 'success') {
+    url.searchParams.delete('payment');
+    url.searchParams.delete('ref');
+    url.searchParams.delete('mock');
+    url.searchParams.delete('credits');
+    window.history.replaceState({}, document.title, url.pathname + url.hash);
+
+    await refreshProfile();
+    toast(`Paiement PayTech validé avec succès (${ref || ''}) ! Vos crédits sont disponibles.`);
+    if (location.hash === '#/pricing') renderPricing();
+  } else if (paymentStatus === 'cancel') {
+    url.searchParams.delete('payment');
+    url.searchParams.delete('ref');
+    window.history.replaceState({}, document.title, url.pathname + url.hash);
+
+    toast('Paiement PayTech annulé. Aucun débit n\'a été effectué.', true);
+  }
+}
+
 async function onSession(session) {
   state.user = session ? session.user : null;
   if (!state.user) { show('auth'); return; }
   await refreshProfile();
+  await checkPaymentReturnParams();
   $('#whoami').textContent = state.profile.nom_complet || state.user.email;
   $('#navAdmin').hidden = !state.profile.is_admin;
   route();
 }
+
 
 async function refreshProfile() {
   if (!state.user) return;
@@ -781,6 +807,10 @@ function openPaymentModal(pack) {
       <div style="font-size:22px; font-weight:800; color:var(--brand); margin-top:4px;">${fmt(pack.prix_fcfa)} FCFA</div>
     </div>
   `;
+  const msgEl = $('#payStatusMsg');
+  if (msgEl) { msgEl.hidden = true; msgEl.textContent = ''; }
+  const btn = $('#btnSubmitPayment');
+  if (btn) { btn.disabled = false; btn.textContent = 'Payer & Obtenir mes crédits'; }
   if (state.profile?.telephone) $('#payPhone').value = state.profile.telephone;
   $('#modalPayment').hidden = false;
 }
@@ -797,13 +827,20 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
   if (!pack) return;
   const provider = $('input[name=payProvider]:checked')?.value || 'wave';
   const phone = $('#payPhone').value.trim();
-  if (!phone) return toast('Indiquez votre numéro de téléphone de paiement.', true);
+  if (!phone) return toast('Indiquez votre numéro de téléphone mobile money.', true);
 
   const btn = $('#btnSubmitPayment');
-  btn.disabled = true; btn.textContent = 'Traitement en cours…';
+  const msgEl = $('#payStatusMsg');
+  btn.disabled = true;
+  btn.textContent = 'Connexion à PayTech…';
+  if (msgEl) {
+    msgEl.hidden = false;
+    msgEl.className = 'msg';
+    msgEl.textContent = 'Préparation du paiement sécurisé…';
+  }
 
   try {
-    // 1. Enregistre le paiement en base de données
+    // 1. Enregistre le paiement préliminaire dans Supabase
     const { data: payRow, error: pErr } = await sb.from('payments').insert({
       user_id: state.user.id,
       package_id: pack.id,
@@ -816,28 +853,82 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
 
     if (pErr) throw new Error(pErr.message);
 
-    // 2. Validation / Simulation du paiement
-    // (Dans un environnement de production, cette étape est assurée par le Webhook Wave / PayDunya / CinetPay)
-    const { error: cErr } = await sb.rpc('complete_payment', { p_payment_id: payRow.id });
-    if (cErr) {
-      // Fallback si RPC complete_payment pas encore exécutée
-      await sb.from('payments').update({ statut: 'completed' }).eq('id', payRow.id);
-      const newBal = (state.profile?.credits_balance || 0) + pack.credits;
-      await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
-      state.profile.credits_balance = newBal;
+    // 2. Détermine l'URL du relais backend (Node.js en local / Cloudflare, ou PHP sur Hostinger)
+    const apiEndpoint = window.location.pathname.endsWith('.php')
+      ? 'api/paytech/request-payment.php'
+      : '/api/paytech/request-payment';
+
+    if (msgEl) msgEl.textContent = 'Initialisation du paiement PayTech (Wave / OM / CB)…';
+
+    const res = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        package_id: pack.id,
+        item_name: `${pack.nom} (${pack.credits} liasses)`,
+        item_price: pack.prix_fcfa,
+        credits: pack.credits,
+        target_payment: provider,
+        phone_number: phone,
+        user_id: state.user.id,
+        user_email: state.user.email,
+        full_name: state.profile?.nom_complet || '',
+        payment_id: payRow?.id || null
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Échec de l\'initialisation auprès de PayTech.');
     }
 
-    await refreshProfile();
-    closeModals();
-    toast(`Paiement de ${fmt(pack.prix_fcfa)} FCFA validé ! +${pack.credits} crédit(s) ajoutés à votre compte.`);
-    if (location.hash === '#/pricing') renderPricing();
+    // Sauvegarde la référence externe (ref_command) retournée par PayTech
+    if (data.ref_command && payRow?.id) {
+      await sb.from('payments').update({ reference_externe: data.ref_command }).eq('id', payRow.id);
+    }
+
+    // 3. Traitement selon mode (Simulation sans clés vs Clés réelles PayTech)
+    if (data.is_mock) {
+      // Clés PayTech non encore fournies : validation locale assistée pour test immédiat
+      if (msgEl) msgEl.textContent = 'Mode simulation sandbox : attribution des crédits…';
+      const { error: cErr } = await sb.rpc('complete_payment', { p_payment_id: payRow.id });
+      if (cErr) {
+        await sb.from('payments').update({ statut: 'completed' }).eq('id', payRow.id);
+        const newBal = (state.profile?.credits_balance || 0) + pack.credits;
+        await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
+        state.profile.credits_balance = newBal;
+      }
+
+      await refreshProfile();
+      closeModals();
+      toast(`[Sandbox] Paiement simulé avec succès (${data.ref_command}) ! +${pack.credits} crédits ajoutés.`);
+      if (location.hash === '#/pricing') renderPricing();
+    } else if (data.redirect_url) {
+      // Clés réelles PayTech : redirection vers l'écran de paiement officiel PayTech (Wave / Orange Money / Carte)
+      if (msgEl) {
+        msgEl.className = 'msg ok';
+        msgEl.textContent = 'Redirection vers la passerelle sécurisée PayTech en cours…';
+      }
+      btn.textContent = 'Redirection en cours…';
+      setTimeout(() => {
+        window.location.href = data.redirect_url;
+      }, 700);
+    }
   } catch (err) {
-    console.error(err);
+    console.error('[Paiement PayTech] Erreur:', err);
+    if (msgEl) {
+      msgEl.hidden = false;
+      msgEl.className = 'msg err';
+      msgEl.textContent = 'Erreur : ' + err.message;
+    }
     toast('Échec du paiement : ' + err.message, true);
   } finally {
-    btn.disabled = false; btn.textContent = 'Payer & Obtenir mes crédits';
+    btn.disabled = false;
+    btn.textContent = 'Payer & Obtenir mes crédits';
   }
 });
+
 
 // ------------------------------------------------------------------ administration
 let adminRows = [];

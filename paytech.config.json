@@ -1,0 +1,10 @@
+{
+  "_commentaire": "Renseignez ici vos identifiants fournis par PayTech (https://paytech.sn)",
+  "api_key": "VOTRE_API_KEY_PAYTECH",
+  "api_secret": "VOTRE_API_SECRET_PAYTECH",
+  "env": "test",
+  "currency": "XOF",
+  "ipn_url": "",
+  "success_url": "",
+  "cancel_url": ""
+}

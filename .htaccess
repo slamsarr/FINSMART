@@ -30,3 +30,17 @@ AddDefaultCharset UTF-8
   Header set X-Frame-Options "SAMEORIGIN"
   Header set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
+
+# 6. Protection des fichiers sensibles
+<FilesMatch "^(paytech\.config.*\.json|\.env.*)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
+# 7. Réécriture des routes API PayTech (Hostinger)
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^api/paytech/request-payment$ api/paytech/request-payment.php [L,QSA]
+  RewriteRule ^api/paytech/ipn$ api/paytech/ipn.php [L,QSA]
+</IfModule>
+

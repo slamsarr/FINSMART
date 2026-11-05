@@ -681,6 +681,161 @@ function renderStoredResult() {
   if (ex?.rapport && ex.generated_at && !$('#resultBox').innerHTML) renderResult(ex.rapport, false);
 }
 
+const CONTROLS_DIAGNOSTIC = {
+  A1: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Le total des débits d\'ouverture n\'est pas égal au total des crédits d\'ouverture (déséquilibre au 01/01).',
+    solution: 'Vérifiez le journal des à-nouveaux dans votre logiciel comptable pour équilibrer les débits et crédits d\'ouverture, puis réimportez la balance N à l\'étape 2.',
+    actionLabel: 'Corriger la Balance N (Étape 2)',
+    hasAnomalies: false,
+  },
+  A2: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Le total des mouvements débits de la période est différent du total des mouvements crédits.',
+    solution: 'Votre balance générale comporte des écritures déséquilibrées. Corrigez-les dans votre logiciel et rechargez la balance à l\'étape 2.',
+    actionLabel: 'Recharger la Balance N (Étape 2)',
+    hasAnomalies: false,
+  },
+  A3: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'La somme algébrique des soldes nets de clôture n\'est pas nulle (Débit clôture ≠ Crédit clôture).',
+    solution: 'La balance de clôture est déséquilibrée. Vérifiez vos cumuls et réimportez la balance équilibrée à l\'étape 2.',
+    actionLabel: 'Corriger la Balance N (Étape 2)',
+    hasAnomalies: false,
+  },
+  B1: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Présence de comptes obsolètes de l\'ancien plan comptable ou inexistants dans le SYSCOHADA Révisé (ex. racines 20, 74, 76, classe 9).',
+    solution: 'Reclassez ces comptes vers les racines SYSCOHADA Révisé autorisées (ex. 74/76 reclassés en 70/75/77). Consultez le tableau des comptes signalés ci-dessous pour les identifier.',
+    actionLabel: 'Voir les comptes & corriger à l\'Étape 2',
+    hasAnomalies: true,
+  },
+  B2: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Des comptes à 6 chiffres ne figurent pas dans la table de correspondance officielle DGID.',
+    solution: 'Vérifiez les numéros de comptes signalés dans la liste ci-dessous et alignez-les sur le plan de comptes officiel.',
+    actionLabel: 'Voir les comptes non classés',
+    hasAnomalies: true,
+  },
+  B4: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Des comptes de gestion (charges classe 6, produits classe 7 ou 8) comportent un solde d\'ouverture au 01/01.',
+    solution: 'En normes SYSCOHADA, les comptes de gestion doivent être soldés à l\'ouverture. Dans votre balance N, mettez à zéro les soldes d\'ouverture des classes 6, 7 et 8.',
+    actionLabel: 'Modifier les soldes d\'ouverture (Étape 2)',
+    hasAnomalies: true,
+  },
+  C1: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Le résultat net dégagé par la balance (Produits - Charges) est différent du résultat net calculé au Compte de Résultat.',
+    solution: 'Vérifiez la concordance de vos comptes de charges et produits ainsi que les écritures d\'inventaire.',
+    actionLabel: 'Vérifier la balance (Étape 2)',
+    hasAnomalies: false,
+  },
+  C2: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Le total de l\'Actif du Bilan n\'est pas égal au total du Passif (Bilan déséquilibré).',
+    solution: 'Vérifiez que le résultat net de l\'exercice est correctement rattaché aux capitaux propres (compte 13) au passif et que les amortissements/dépréciations sont bien au crédit.',
+    actionLabel: 'Vérifier les comptes de bilan (Étape 2)',
+    hasAnomalies: false,
+  },
+  C3: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'La variation de trésorerie issue du Tableau des Flux (TFT) ne correspond pas à la trésorerie nette au Bilan.',
+    solution: 'Vérifiez les variations des comptes de disponibilités (52 Banque, 57 Caisse) et de concours bancaires (56 Découverts).',
+    actionLabel: 'Vérifier la trésorerie (Étape 2)',
+    hasAnomalies: false,
+  },
+  C4: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Incohérence dans les cumuls des soldes intermédiaires de gestion du Compte de Résultat.',
+    solution: 'Vérifiez les totaux de la cascade de résultat (Marge, Valeur Ajoutée, EBE, Résultat d\'Exploitation).',
+    actionLabel: 'Vérifier le compte de résultat',
+    hasAnomalies: false,
+  },
+  D1: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'L\'ouverture N des Capitaux Propres (classe 1) ne concorde pas avec la clôture N-1 majorée du résultat N-1.',
+    solution: 'Vérifiez que l\'affectation du résultat N-1 a bien été enregistrée et que la balance N-1 chargée correspond bien à l\'exercice précédent arrêté.',
+    actionLabel: 'Vérifier les capitaux propres (Étape 2)',
+    hasAnomalies: false,
+  },
+  D2: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'L\'ouverture N des Immobilisations (classe 2) ne concorde pas avec la clôture N-1.',
+    solution: 'Les valeurs brutes d\'immobilisations au 01/01/N doivent être strictement identiques à celles au 31/12/N-1.',
+    actionLabel: 'Vérifier la classe 2 (Étape 2)',
+    hasAnomalies: false,
+  },
+  D3: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'L\'ouverture N des Stocks (classe 3) ne concorde pas avec la clôture N-1.',
+    solution: 'Le stock initial au 01/01/N doit être rigoureusement identique au stock final au 31/12/N-1.',
+    actionLabel: 'Vérifier les stocks (Étape 2)',
+    hasAnomalies: false,
+  },
+  D4: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'L\'ouverture N des Créances et Dettes circulantes (classe 4) ne concorde pas avec la clôture N-1.',
+    solution: 'Vérifiez les reports des comptes de tiers (clients, fournisseurs, personnel, organismes sociaux, État).',
+    actionLabel: 'Vérifier la classe 4 (Étape 2)',
+    hasAnomalies: false,
+  },
+  D5: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'L\'ouverture N des comptes de Trésorerie (classe 5) ne concorde pas avec la clôture N-1.',
+    solution: 'Les soldes d\'ouverture de banque et caisse au 01/01/N doivent être exactement égaux aux soldes de clôture N-1.',
+    actionLabel: 'Vérifier la classe 5 (Étape 2)',
+    hasAnomalies: false,
+  },
+  E7: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Les amortissements cumulés (classe 28) dépassent la valeur brute de l\'immobilisation correspondante.',
+    solution: 'Ajustez les dotations aux amortissements ou constatez la sortie des immobilisations totalement amorties ou cédées.',
+    actionLabel: 'Vérifier les amortissements (Étape 2)',
+    hasAnomalies: true,
+  },
+  E8: {
+    cible: 'Étape 3 (Informations)',
+    step: 3,
+    cause: 'Le capital social saisi dans la Note 13 ne concorde pas avec le compte 101 du Bilan.',
+    solution: 'Rendez-vous à l\'Étape 3 (Informations) pour renseigner le tableau du Capital social (Note 13) avec un montant identique au Bilan.',
+    actionLabel: 'Remplir la Note 13 (Étape 3)',
+    hasAnomalies: false,
+  },
+  F1: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'Anomalie de format dans le fichier de balance (numéro de compte absent ou textuel, doublons de comptes, ligne de total collée).',
+    solution: 'Rendez-vous à l\'Étape 2 et vérifiez que votre balance respecte le modèle 6 colonnes (sans lignes de sous-totaux dans les données).',
+    actionLabel: 'Recharger la balance (Étape 2)',
+    hasAnomalies: false,
+  },
+  F2: {
+    cible: 'Étape 2 (Balances)',
+    step: 2,
+    cause: 'La balance dépasse 5 000 lignes ou l\'en-tête de total a été altéré.',
+    solution: 'Vérifiez la taille et les en-têtes de votre fichier de balance à l\'Étape 2.',
+    actionLabel: 'Vérifier le fichier (Étape 2)',
+    hasAnomalies: false,
+  }
+};
+
 function renderResult(r, fresh) {
   const d = state.dossier;
   const isLimited = (d.exercise?.generation_type === 'free' && !d.exercise?.is_full_version) || !!r.isLimited;
@@ -689,10 +844,109 @@ function renderResult(r, fresh) {
   const pct = v => (typeof v === 'number' ? (v * 100).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %' : '');
   const val = (l, v) => (/marge/i.test(l) ? pct(v) : fmt(v));
   const kpis = (r.chiffresCles || []).map(k => `<div class="kpi"><div class="l">${esc(k.libelle)}</div><div class="v">${esc(val(k.libelle, k.n))}</div><div class="d">N-1 : ${esc(val(k.libelle, k.n1))}${typeof k.variation === 'number' && !/marge/i.test(k.libelle) ? ' · ' + pct(k.variation) : ''}</div></div>`).join('');
-  const ctl = (r.controls || []).map(c => c.section
-    ? `<tr class="section"><td colspan="5">${esc(c.code)} · ${esc(c.libelle)}</td></tr>`
-    : `<tr><td>${esc(c.code)}</td><td>${esc(c.libelle)} ${c.type === 'B' ? '<span class="badge neutral">bloquant</span>' : ''}</td><td class="num">${esc(typeof c.n === 'number' ? fmt(c.n) : c.n ?? '')}</td><td class="num">${esc(typeof c.n1 === 'number' ? fmt(c.n1) : c.n1 ?? '')}</td><td>${String(c.statut).startsWith('✔') ? '<span class="badge ok">OK</span>' : `<span class="badge ${c.type === 'B' ? 'bad' : 'warn'}">À vérifier</span>`}</td></tr>`).join('');
   const an = r.anomalies || [];
+
+  // Filtrage des contrôles bloquants et de vigilance non conformes
+  const allControls = r.controls || [];
+  const failedBloquants = allControls.filter(c => !c.section && c.type === 'B' && !String(c.statut).startsWith('✔'));
+  const failedVigilances = allControls.filter(c => !c.section && c.type === 'V' && !String(c.statut).startsWith('✔'));
+  const totalValids = allControls.filter(c => !c.section && String(c.statut).startsWith('✔')).length;
+  const totalControls = allControls.filter(c => !c.section).length;
+
+  // Construction du panneau de diagnostic bloquants
+  let diagnosticHtml = '';
+  if (failedBloquants.length > 0) {
+    diagnosticHtml = `
+      <div class="diagnostic-box bad" id="diagnosticBox">
+        <div class="diagnostic-header">
+          <span class="diag-icon">⛔</span>
+          <div>
+            <h4>${failedBloquants.length} contrôle(s) bloquant(s) détecté(s) : Action requise</h4>
+            <p>Ces anomalies entraînent le rejet de votre liasse par la plateforme officielle <strong>Sen-etafi de la DGID</strong>. Suivez les consignes pour aller directement corriger chaque élément :</p>
+          </div>
+        </div>
+        <div class="diagnostic-cards">
+          ${failedBloquants.map(c => {
+            const diag = CONTROLS_DIAGNOSTIC[c.code] || {
+              cible: 'Étape 2 (Balances)',
+              step: 2,
+              cause: 'Écart constaté sur ce contrôle de cohérence.',
+              solution: 'Vérifiez les montants correspondants dans votre balance générale et réimportez le fichier à l\'étape 2.',
+              actionLabel: 'Corriger à l\'Étape 2 (Balances)',
+              hasAnomalies: false,
+            };
+            const ecartTxt = typeof c.n === 'number' && c.n !== 0 ? `Écart N : ${fmt(c.n)} FCFA` : (typeof c.n1 === 'number' && c.n1 !== 0 ? `Écart N-1 : ${fmt(c.n1)} FCFA` : 'Non conforme');
+            return `<div class="diagnostic-card">
+              <div class="diag-card-head">
+                <div>
+                  <span class="badge bad" style="font-weight:700;">⛔ Bloquant · ${esc(c.code)}</span>
+                  <strong style="margin-left:8px;">${esc(c.libelle)}</strong>
+                </div>
+                <span class="diag-ecart">${esc(ecartTxt)}</span>
+              </div>
+              <div class="diag-card-body">
+                <p><strong>Cause :</strong> ${esc(diag.cause)}</p>
+                <p><strong>Où et comment corriger :</strong> <span style="color:#991b1b; font-weight:600;">[${esc(diag.cible)}]</span> ${esc(diag.solution)}</p>
+              </div>
+              <div class="diag-card-foot">
+                <button class="btn sm gold" data-step-go="${diag.step}">✏️ ${esc(diag.actionLabel)}</button>
+                ${diag.hasAnomalies && an.length ? `<button class="btn sm ghost" data-open-anomalies="true">🔍 Voir les comptes signalés (${an.length})</button>` : ''}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  } else if (failedVigilances.length > 0) {
+    diagnosticHtml = `
+      <div class="diagnostic-box warn" id="diagnosticBox">
+        <div class="diagnostic-header" style="margin-bottom:0;">
+          <span class="diag-icon">⚠️</span>
+          <div>
+            <h4 style="color:#92400e;">Aucun blocage – ${failedVigilances.length} point(s) de vigilance à examiner</h4>
+            <p style="color:#78350f;">Votre liasse ne comporte aucune erreur bloquante, mais quelques écarts indicatifs méritent une vérification avant validation finale.</p>
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    diagnosticHtml = `
+      <div class="diagnostic-box ok" id="diagnosticBox">
+        <div class="diagnostic-header" style="margin-bottom:0;">
+          <span class="diag-icon">✅</span>
+          <div>
+            <h4 style="color:#166534;">Liasse 100% conforme et équilibrée</h4>
+            <p style="color:#15803d;">Tous les contrôles de cohérence et équilibres SYSCOHADA sont validés avec succès. Votre fichier est prêt pour Sen-etafi.</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Tableau des contrôles avec repères visuels clairs
+  const ctl = allControls.map(c => {
+    if (c.section) {
+      return `<tr class="section" data-kind="section"><td colspan="5">${esc(c.code)} · ${esc(c.libelle)}</td></tr>`;
+    }
+    const isOk = String(c.statut).startsWith('✔');
+    const isBloquant = c.type === 'B';
+    const isFail = !isOk;
+    const rowClass = isFail ? (isBloquant ? 'tr-bloquant-err' : 'tr-vigilance-err') : '';
+    const filterKind = isFail ? (isBloquant ? 'bloquant' : 'vigilance') : 'ok';
+    const diag = CONTROLS_DIAGNOSTIC[c.code];
+    const guideNote = isFail && diag ? `<div class="ctl-guide-note"><strong>Où corriger :</strong> ${esc(diag.cible)} – ${esc(diag.solution)}</div>` : '';
+
+    return `<tr class="${rowClass}" data-kind="${filterKind}">
+      <td><b>${esc(c.code)}</b></td>
+      <td>
+        <div>${esc(c.libelle)} ${isBloquant ? '<span class="badge ' + (isFail ? 'bad' : 'neutral') + '">bloquant</span>' : '<span class="badge neutral">vigilance</span>'}</div>
+        ${guideNote}
+      </td>
+      <td class="num">${esc(typeof c.n === 'number' ? fmt(c.n) : c.n ?? '')}</td>
+      <td class="num">${esc(typeof c.n1 === 'number' ? fmt(c.n1) : c.n1 ?? '')}</td>
+      <td>${isOk ? '<span class="badge ok">OK</span>' : `<span class="badge ${isBloquant ? 'bad' : 'warn'}" style="font-weight:700;">${isBloquant ? '⛔ À corriger' : '⚠️ À vérifier'}</span>`}</td>
+    </tr>`;
+  }).join('');
 
   const limitedBanner = isLimited ? `
     <div class="status-banner warn" style="margin-top:0;">
@@ -710,14 +964,29 @@ function renderResult(r, fresh) {
     ${limitedBanner}
     <div class="status-banner ${cls}"><div><strong>${esc(title)}</strong><div class="small">Généré le ${esc(dateTimeFr(d.exercise?.generated_at || Date.now()))} · ${esc(r.fichier || '')}</div></div>
       <button class="btn primary" id="btnDlLiasse">${isLimited ? 'Télécharger l\'évaluation (.xlsx)' : 'Télécharger la liasse complète (.xlsx)'}</button></div>
+    
+    ${diagnosticHtml}
+
     <h3>Chiffres clés (FCFA)</h3><div class="kpis">${kpis}</div>
-    <h3>Contrôles de cohérence</h3>
-    <div class="table-wrap"><table class="table"><thead><tr><th>N°</th><th>Contrôle</th><th>N</th><th>N-1</th><th>Statut</th></tr></thead><tbody>${ctl}</tbody></table></div>
-    ${an.length ? `<details style="margin-top:14px"><summary><span>${r.nbAnomalies || an.length} compte(s) signalé(s) dans les balances</span></summary>
+    
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; margin-top:20px;">
+      <h3 style="margin:0;">Contrôles de cohérence</h3>
+      <div class="control-filters">
+        <span class="control-filter-label">Filtrer :</span>
+        <button class="control-filter-btn active" data-ctl-filter="all">Tous (${totalControls})</button>
+        ${failedBloquants.length ? `<button class="control-filter-btn filter-bad" data-ctl-filter="bloquant">⛔ Bloquants à corriger (${failedBloquants.length})</button>` : ''}
+        ${failedVigilances.length ? `<button class="control-filter-btn filter-warn" data-ctl-filter="vigilance">⚠️ Vigilance (${failedVigilances.length})</button>` : ''}
+        <button class="control-filter-btn" data-ctl-filter="ok">✅ Conformes (${totalValids})</button>
+      </div>
+    </div>
+    
+    <div class="table-wrap"><table class="table" id="tableControls"><thead><tr><th>N°</th><th>Contrôle</th><th>N</th><th>N-1</th><th>Statut</th></tr></thead><tbody>${ctl}</tbody></table></div>
+    ${an.length ? `<details style="margin-top:14px" id="detailsAnomalies"><summary><span>${r.nbAnomalies || an.length} compte(s) signalé(s) dans les balances</span></summary>
       <div class="table-wrap"><table class="table"><thead><tr><th>Balance</th><th>Compte</th><th>Intitulé</th><th>Solde</th><th>Observation</th></tr></thead><tbody>
       ${an.map(a => `<tr><td>${esc(a.balance)}</td><td>${esc(a.compte)}</td><td>${esc(a.intitule)}</td><td class="num">${fmt(a.solde)}</td><td>${esc(a.messages.join(' ; '))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
     <p class="small muted" style="margin-top:14px">Le fichier reprend le modèle officiel <em>modele_etats_financiers_DGID (Nouveau)</em> : onglets inchangés, valeurs uniquement (aucune formule). Rappel : visa de l'expert-comptable ou du commissaire aux comptes requis pour le dépôt sur Sen-etafi.</p>`;
 
+  // Écouteurs de téléchargement et déblocage
   $('#btnDlLiasse').addEventListener('click', async () => {
     if (d.lastBlob) return downloadBlob(d.lastBlob.blob, d.lastBlob.name);
     const f = (await sb.from('exercise_files').select('*').eq('exercise_id', d.exercise.id).order('created_at', { ascending: false }).limit(1).maybeSingle()).data;
@@ -728,8 +997,40 @@ function renderResult(r, fresh) {
     executeGeneration('paid');
   });
 
+  // Écouteurs de navigation directe vers l'étape de correction
+  $('#resultBox').querySelectorAll('[data-step-go]').forEach(b => b.addEventListener('click', () => {
+    setStep(+b.dataset.stepGo);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+
+  // Écouteur pour ouvrir les comptes en anomalie
+  $('#resultBox').querySelectorAll('[data-open-anomalies]').forEach(b => b.addEventListener('click', () => {
+    const det = $('#detailsAnomalies');
+    if (det) {
+      det.open = true;
+      det.scrollIntoView({ behavior: 'smooth' });
+    }
+  }));
+
+  // Écouteurs de filtrage interactif du tableau des contrôles
+  $('#resultBox').querySelectorAll('[data-ctl-filter]').forEach(b => b.addEventListener('click', () => {
+    $('#resultBox').querySelectorAll('[data-ctl-filter]').forEach(x => x.classList.toggle('active', x === b));
+    const filter = b.dataset.ctlFilter;
+    $('#tableControls tbody').querySelectorAll('tr').forEach(tr => {
+      const kind = tr.dataset.kind;
+      if (kind === 'section') {
+        tr.hidden = filter !== 'all';
+      } else if (filter === 'all') {
+        tr.hidden = false;
+      } else {
+        tr.hidden = kind !== filter;
+      }
+    });
+  }));
+
   if (fresh) toast(isLimited ? 'Évaluation générée.' : 'Liasse complète générée.');
 }
+
 
 // ------------------------------------------------------------------ tarifs & paiements
 const DEFAULT_PACKS = [

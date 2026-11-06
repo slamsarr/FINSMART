@@ -1,7 +1,7 @@
 {
-  "_commentaire": "Renseignez ici vos identifiants fournis par PayTech (https://paytech.sn)",
-  "api_key": "VOTRE_API_KEY_PAYTECH",
-  "api_secret": "VOTRE_API_SECRET_PAYTECH",
+  "_commentaire": "Identifiants PayTech Sénégal (https://paytech.sn)",
+  "api_key": "bbf5406850548cf3ea36b4cc5b7314d41b8af0b05636d5a331be1e7997c3b5f2",
+  "api_secret": "0b467b3ea23819de5ef18f1cc0d8de1abdd9add091addc00971c279a4db08508",
   "env": "test",
   "currency": "XOF",
   "ipn_url": "",

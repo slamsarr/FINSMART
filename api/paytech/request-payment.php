@@ -41,6 +41,9 @@ $host = $_SERVER['HTTP_HOST'];
 $origin = $protocol . $host;
 
 $ipnUrl = !empty($config['ipn_url']) ? $config['ipn_url'] : $origin . '/api/paytech/ipn.php';
+if (strpos($ipnUrl, 'http://') === 0) {
+    $ipnUrl = 'https://' . substr($ipnUrl, 7);
+}
 $successUrl = !empty($config['success_url']) ? $config['success_url'] : $origin . '/?payment=success&ref=' . urlencode($refCommand);
 $cancelUrl = !empty($config['cancel_url']) ? $config['cancel_url'] : $origin . '/?payment=cancel&ref=' . urlencode($refCommand);
 
@@ -114,9 +117,10 @@ if ($response === false) {
 }
 
 $data = json_decode($response, true);
-if (isset($data['success']) && $data['success'] == 1 && !empty($data['redirect_url'])) {
+$rawRedirectUrl = $data['redirect_url'] ?? $data['redirectUrl'] ?? null;
+if (isset($data['success']) && $data['success'] == 1 && !empty($rawRedirectUrl)) {
     // Ajout des paramètres d'auto-remplissage (?pn, nn, fn, tp, nac)
-    $redirectUrl = $data['redirect_url'];
+    $redirectUrl = $rawRedirectUrl;
     $sep = strpos($redirectUrl, '?') === false ? '?' : '&';
     $params = [];
     if (!empty($cleanPhone)) {

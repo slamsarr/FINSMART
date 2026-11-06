@@ -289,14 +289,6 @@
     </div>
     <div class="modal-body">
       <div id="payModalDetails" style="margin-bottom:14px;"></div>
-      
-      <div style="background:#f0fdf4; border:1px solid #bbf7d0; padding:12px; border-radius:8px; margin-bottom:14px; font-size:13px; line-height:1.5;">
-        <strong style="color:#166534; font-size:14px;">📋 Procédure de règlement :</strong><br>
-        1. Choisissez votre moyen de transfert ci-dessous et confirmez votre commande.<br>
-        2. Effectuez le transfert du montant exact vers le compte officiel FINSMART :<br>
-        <div style="font-size:17px; font-weight:800; color:var(--brand); margin:6px 0;">📱 Wave / Orange Money : 77 443 96 90</div>
-        <span class="muted small">3. Votre commande est validée manuellement par l'administrateur dès réception du transfert et vos crédits sont immédiatement débloqués.</span>
-      </div>
 
       <label>Sélectionnez votre moyen de paiement au Sénégal :</label>
       <div class="payment-methods">
@@ -313,20 +305,31 @@
           <span>🟢 Free Money</span>
         </label>
         <label class="payment-method">
+          <input type="radio" name="payProvider" value="Carte Bancaire">
+          <span>💳 Carte Bancaire</span>
+        </label>
+        <label class="payment-method">
           <input type="radio" name="payProvider" value="Virement / Chèque">
-          <span>🏦 Virement / Chèque</span>
+          <span>🏦 Virement direct</span>
         </label>
       </div>
 
-      <label>Votre numéro de téléphone émetteur du transfert :
+      <div id="payTransferNotice" hidden style="background:#f0fdf4; border:1px solid #bbf7d0; padding:12px; border-radius:8px; margin:14px 0; font-size:13px; line-height:1.5;">
+        <strong style="color:#166534; font-size:14px;">📋 Virement manuel / Transfert direct :</strong><br>
+        Effectuez votre transfert vers le compte officiel FINSMART :<br>
+        <div style="font-size:17px; font-weight:800; color:var(--brand); margin:6px 0;">📱 Wave / Orange Money : 77 443 96 90</div>
+        <span class="muted small">Votre commande sera validée manuellement par l'administrateur dès réception.</span>
+      </div>
+
+      <label id="payPhoneLabel">Votre numéro de téléphone (Wave / OM) :
         <input type="tel" id="payPhone" placeholder="77 000 00 00" required>
       </label>
       <div id="payStatusMsg" class="msg" hidden style="margin-top:12px;"></div>
-      <p class="small muted" style="margin-top:10px;">Vos crédits sont valables sans limite de durée sur toutes vos entreprises et tous vos exercices.</p>
+      <p class="small muted" style="margin-top:10px;">🔒 Paiement direct et sécurisé par l'API PayTech Sénégal. Vos crédits sont valables sans limite de durée.</p>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" data-close-modal>Annuler</button>
-      <button class="btn gold" id="btnSubmitPayment">Confirmer ma commande</button>
+      <button class="btn gold" id="btnSubmitPayment">Payer avec PayTech</button>
     </div>
   </div>
 </div>

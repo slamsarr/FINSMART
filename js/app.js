@@ -1143,7 +1143,7 @@ async function renderPricing() {
 let selectedPackForPayment = null;
 function openPaymentModal(pack) {
   selectedPackForPayment = pack;
-  $('#payModalTitle').textContent = `Commander ${pack.nom}`;
+  $('#payModalTitle').textContent = `Payer ${pack.nom}`;
   $('#payModalDetails').innerHTML = `
     <div style="background:var(--bg); padding:12px; border-radius:8px; margin-bottom:12px;">
       <div style="font-size:16px; font-weight:700;">${esc(pack.nom)} · ${pack.credits} génération(s) complète(s)</div>
@@ -1152,8 +1152,10 @@ function openPaymentModal(pack) {
   `;
   const msgEl = $('#payStatusMsg');
   if (msgEl) { msgEl.hidden = true; msgEl.textContent = ''; }
+  const notice = $('#payTransferNotice');
+  if (notice) notice.hidden = true;
   const btn = $('#btnSubmitPayment');
-  if (btn) { btn.disabled = false; btn.textContent = 'Confirmer ma commande'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Payer avec PayTech'; }
   if (state.profile?.telephone) $('#payPhone').value = state.profile.telephone;
   $('#modalPayment').hidden = false;
 }
@@ -1162,7 +1164,14 @@ function openPaymentModal(pack) {
 $$('.payment-method').forEach(pm => pm.addEventListener('click', () => {
   $$('.payment-method').forEach(x => x.classList.toggle('active', x === pm));
   const r = pm.querySelector('input[type=radio]');
-  if (r) r.checked = true;
+  if (r) {
+    r.checked = true;
+    const isDirect = (r.value === 'Virement / Chèque');
+    const notice = $('#payTransferNotice');
+    if (notice) notice.hidden = !isDirect;
+    const btn = $('#btnSubmitPayment');
+    if (btn) btn.textContent = isDirect ? 'Confirmer la commande (Règlement direct)' : 'Payer avec PayTech';
+  }
 }));
 
 $('#btnSubmitPayment').addEventListener('click', async () => {
@@ -1170,24 +1179,50 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
   if (!pack) return;
   const provider = $('input[name=payProvider]:checked')?.value || 'Wave';
   const phone = $('#payPhone').value.trim();
-  if (!phone) return toast('Indiquez votre numéro de téléphone émetteur du transfert.', true);
+  if (!phone) return toast('Indiquez votre numéro de téléphone mobile money.', true);
 
   const btn = $('#btnSubmitPayment');
   const msgEl = $('#payStatusMsg');
   btn.disabled = true;
-  btn.textContent = 'Enregistrement de votre commande…';
+  btn.textContent = 'Connexion sécurisée…';
   if (msgEl) {
     msgEl.hidden = false;
     msgEl.className = 'msg';
-    msgEl.textContent = 'Création de la commande en cours…';
+    msgEl.textContent = 'Préparation du paiement…';
   }
 
   try {
-    // Génération de la référence unique de commande
-    const randSuffix = Math.floor(1000 + Math.random() * 9000);
-    const refCmd = `FIN-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
+    // Si règlement manuel (Virement / Chèque)
+    if (provider === 'Virement / Chèque') {
+      const randSuffix = Math.floor(1000 + Math.random() * 9000);
+      const refCmd = `FIN-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
 
-    // 1. Enregistre la commande dans Supabase avec statut 'pending'
+      const { data: payRow, error: pErr } = await sb.from('payments').insert({
+        user_id: state.user.id,
+        package_id: pack.id,
+        credits_achetes: pack.credits,
+        montant_fcfa: pack.prix_fcfa,
+        moyen_paiement: provider,
+        telephone_paiement: phone,
+        reference_externe: refCmd,
+        statut: 'pending'
+      }).select().single();
+
+      if (pErr) throw new Error(pErr.message);
+
+      closeModals();
+      alert(
+        `✅ Commande ${refCmd} enregistrée !\n\n` +
+        `Montant : ${fmt(pack.prix_fcfa)} FCFA vers le 77 443 96 90 (Wave / Orange Money).\n` +
+        `Vos crédits seront alloués dès validation par l'administrateur.`
+      );
+      toast(`Commande ${refCmd} enregistrée !`);
+      if (location.hash === '#/pricing' || location.hash === '#pricing') renderPricing();
+      return;
+    }
+
+    // PAIEMENT EN LIGNE PAYTECH (Wave / Orange Money / Free Money / Carte Bancaire)
+    // 1. Enregistre la commande préliminaire dans Supabase
     const { data: payRow, error: pErr } = await sb.from('payments').insert({
       user_id: state.user.id,
       package_id: pack.id,
@@ -1195,49 +1230,104 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
       montant_fcfa: pack.prix_fcfa,
       moyen_paiement: provider,
       telephone_paiement: phone,
-      reference_externe: refCmd,
       statut: 'pending'
     }).select().single();
 
-    if (pErr) throw new Error(pErr.message);
+    if (pErr) console.warn('Avertissement insert payment préliminaire:', pErr.message);
 
-    // 2. Mémorise le numéro de téléphone dans le profil si non renseigné
+    // Mémorise le téléphone dans le profil
     if (!state.profile?.telephone) {
-      await sb.from('profiles').update({ telephone: phone }).eq('id', state.user.id);
-      if (state.profile) state.profile.telephone = phone;
+      sb.from('profiles').update({ telephone: phone }).eq('id', state.user.id).catch(() => {});
     }
 
-    closeModals();
+    // 2. Préparation du payload PayTech
+    let targetPaymentCode = 'wave';
+    if (provider === 'Orange Money') targetPaymentCode = 'orange_money';
+    else if (provider === 'Free Money') targetPaymentCode = 'free_money';
+    else if (provider === 'Carte Bancaire') targetPaymentCode = 'carte';
 
-    // 3. Information claire pour l'utilisateur
-    alert(
-      `✅ Commande enregistrée avec succès !\n\n` +
-      `Référence commande : ${refCmd}\n` +
-      `Pack : ${pack.nom} (+${pack.credits} générations)\n` +
-      `Montant à transférer : ${fmt(pack.prix_fcfa)} FCFA\n\n` +
-      `📱 Instructions de règlement :\n` +
-      `Effectuez le transfert de ${fmt(pack.prix_fcfa)} FCFA via ${provider} vers le numéro officiel FINSMART :\n` +
-      `👉 77 443 96 90 (Bénéficiaire : FINSMART)\n\n` +
-      `Dès réception de votre transfert, l'administrateur valide votre commande et vos crédits seront immédiatement activés sur votre compte.`
-    );
+    const reqPayload = {
+      package_id: pack.id,
+      item_name: `${pack.nom} (${pack.credits} liasses)`,
+      item_price: pack.prix_fcfa,
+      credits: pack.credits,
+      target_payment: targetPaymentCode,
+      phone_number: phone,
+      user_id: state.user.id,
+      user_email: state.user.email,
+      full_name: state.profile?.nom_complet || '',
+      payment_id: payRow?.id || null
+    };
 
-    toast(`Commande ${refCmd} créée ! En attente de votre transfert.`);
+    // 3. Appel du relais PayTech (gère Node.js en local et Apache PHP sur Hostinger)
+    let apiEndpoint = '/api/paytech/request-payment';
+    if (window.location.pathname.endsWith('.php')) {
+      apiEndpoint = 'api/paytech/request-payment.php';
+    }
 
-    // 4. Actualise l'historique sur la page tarifs
-    if (location.hash === '#/pricing' || location.hash === '#pricing') {
-      renderPricing();
+    if (msgEl) msgEl.textContent = 'Connexion à la passerelle PayTech (Wave / OM / CB)…';
+
+    let res = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reqPayload)
+    }).catch(() => null);
+
+    // Secours automatique si rewrite Apache non actif
+    if (!res || res.status === 404) {
+      res = await fetch('api/paytech/request-payment.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reqPayload)
+      });
+    }
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Échec de l\'initialisation auprès de PayTech.');
+    }
+
+    // Sauvegarde la référence PayTech
+    if (data.ref_command && payRow?.id) {
+      await sb.from('payments').update({ reference_externe: data.ref_command }).eq('id', payRow.id);
+    }
+
+    // 4. Redirection vers la page de paiement officielle PayTech
+    if (data.redirect_url) {
+      if (msgEl) {
+        msgEl.className = 'msg ok';
+        msgEl.textContent = 'Redirection vers l\'écran de paiement officiel PayTech en cours…';
+      }
+      btn.textContent = 'Redirection en cours…';
+      setTimeout(() => {
+        window.location.href = data.redirect_url;
+      }, 400);
+      return;
+    }
+
+    // 5. Cas simulation sandbox (si clés en attente)
+    if (data.is_mock) {
+      if (msgEl) msgEl.textContent = 'Attribution des crédits…';
+      if (payRow?.id) {
+        await sb.rpc('complete_payment', { p_payment_id: payRow.id }).catch(() => {});
+      }
+      await refreshProfile();
+      closeModals();
+      toast(`[Sandbox] Paiement simulé avec succès (${data.ref_command}) ! +${pack.credits} crédits ajoutés.`);
+      if (location.hash === '#/pricing' || location.hash === '#pricing') renderPricing();
     }
   } catch (err) {
-    console.error('[Commande Paiement] Erreur:', err);
+    console.error('[Paiement PayTech] Erreur:', err);
     if (msgEl) {
       msgEl.hidden = false;
       msgEl.className = 'msg err';
       msgEl.textContent = 'Erreur : ' + err.message;
     }
-    toast('Échec de la commande : ' + err.message, true);
+    toast('Échec du paiement : ' + err.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Confirmer ma commande';
+    btn.textContent = 'Payer avec PayTech';
   }
 });
 

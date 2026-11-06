@@ -156,7 +156,8 @@ async function handlePayTechApi(req, res, parsedUrl) {
       const proto = req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http');
       const origin = `${proto}://${host}`;
 
-      const ipn_url = config.ipn_url || `${origin}/api/paytech/ipn`;
+      let ipn_url = config.ipn_url || `${origin}/api/paytech/ipn`;
+      if (ipn_url.startsWith('http://')) ipn_url = 'https://' + ipn_url.slice(7);
       const success_url = config.success_url || `${origin}/?payment=success&ref=${encodeURIComponent(ref_command)}`;
       const cancel_url = config.cancel_url || `${origin}/?payment=cancel&ref=${encodeURIComponent(ref_command)}`;
 
@@ -226,10 +227,11 @@ async function handlePayTechApi(req, res, parsedUrl) {
 
       const ptData = await ptRes.json().catch(() => ({}));
 
-      if (ptData.success === 1 && ptData.redirect_url) {
+      const rawRedirect = ptData.redirect_url || ptData.redirectUrl;
+      if (ptData.success === 1 && rawRedirect) {
         // Paramètres d'auto-remplissage selon documentation PayTech
         // ?pn=numero & nn=221 & fn=Nom & tp=Wave & nac=1
-        const u = new URL(ptData.redirect_url);
+        const u = new URL(rawRedirect);
         if (cleanPhone) {
           u.searchParams.set('pn', cleanPhone);
           u.searchParams.set('nn', '221');

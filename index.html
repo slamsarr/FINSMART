@@ -254,42 +254,45 @@
   </div>
 </div>
 
-<!-- ======================= MODALE DE PAIEMENT ======================= -->
+<!-- ======================= MODALE DE PAIEMENT / COMMANDE ======================= -->
 <div class="modal-overlay" id="modalPayment" hidden>
   <div class="modal-box">
     <div class="modal-head">
-      <h2 id="payModalTitle">Acheter des crédits</h2>
+      <h2 id="payModalTitle">Commander des crédits</h2>
       <button class="modal-close" data-close-modal>&times;</button>
     </div>
     <div class="modal-body">
       <div id="payModalDetails" style="margin-bottom:14px;"></div>
       
-      <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); margin-bottom:14px; background:#f0fdf4; border:1px solid #bbf7d0; padding:8px 12px; border-radius:6px;">
-        <span style="font-size:16px;">🔒</span>
-        <span>Paiement sécurisé opéré par <strong>PayTech Sénégal</strong> (Wave, Orange Money, Free Money, Carte Bancaire)</span>
+      <div style="background:#f0fdf4; border:1px solid #bbf7d0; padding:12px; border-radius:8px; margin-bottom:14px; font-size:13px; line-height:1.5;">
+        <strong style="color:#166534; font-size:14px;">📋 Procédure de règlement :</strong><br>
+        1. Choisissez votre moyen de transfert ci-dessous et confirmez votre commande.<br>
+        2. Effectuez le transfert du montant exact vers le compte officiel FINSMART :<br>
+        <div style="font-size:17px; font-weight:800; color:var(--brand); margin:6px 0;">📱 Wave / Orange Money : 77 443 96 90</div>
+        <span class="muted small">3. Votre commande est validée manuellement par l'administrateur dès réception du transfert et vos crédits sont immédiatement débloqués.</span>
       </div>
 
       <label>Sélectionnez votre moyen de paiement au Sénégal :</label>
       <div class="payment-methods">
         <label class="payment-method active">
-          <input type="radio" name="payProvider" value="wave" checked>
+          <input type="radio" name="payProvider" value="Wave" checked>
           <span>🌊 Wave</span>
         </label>
         <label class="payment-method">
-          <input type="radio" name="payProvider" value="orange_money">
+          <input type="radio" name="payProvider" value="Orange Money">
           <span>🍊 Orange Money</span>
         </label>
         <label class="payment-method">
-          <input type="radio" name="payProvider" value="free_money">
+          <input type="radio" name="payProvider" value="Free Money">
           <span>🟢 Free Money</span>
         </label>
         <label class="payment-method">
-          <input type="radio" name="payProvider" value="carte">
-          <span>💳 Carte bancaire</span>
+          <input type="radio" name="payProvider" value="Virement / Chèque">
+          <span>🏦 Virement / Chèque</span>
         </label>
       </div>
 
-      <label>Numéro de téléphone mobile money (Sénégal) :
+      <label>Votre numéro de téléphone émetteur du transfert :
         <input type="tel" id="payPhone" placeholder="77 000 00 00" required>
       </label>
       <div id="payStatusMsg" class="msg" hidden style="margin-top:12px;"></div>
@@ -297,10 +300,11 @@
     </div>
     <div class="modal-foot">
       <button class="btn ghost" data-close-modal>Annuler</button>
-      <button class="btn gold" id="btnSubmitPayment">Payer & Obtenir mes crédits</button>
+      <button class="btn gold" id="btnSubmitPayment">Confirmer ma commande</button>
     </div>
   </div>
 </div>
+
 
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>

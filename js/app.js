@@ -1113,12 +1113,19 @@ async function renderPricing() {
   const { data: payments } = await sb.from('payments').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false });
   if (payments?.length) {
     tb.innerHTML = payments.map(pay => {
-      const st = pay.statut === 'completed' ? '<span class="badge ok">Payé</span>' : pay.statut === 'pending' ? '<span class="badge warn">En attente</span>' : '<span class="badge bad">Échoué</span>';
+      const st = pay.statut === 'completed'
+        ? '<span class="badge ok">Validé</span>'
+        : pay.statut === 'pending'
+        ? '<span class="badge warn" title="En attente de réception du transfert au 77 443 96 90">En attente de validation</span>'
+        : '<span class="badge bad">Annulé</span>';
+      const moyen = pay.reference_externe
+        ? `<b>${esc(pay.moyen_paiement)}</b><div class="small muted" style="font-family:monospace; font-size:11px;">Réf: ${esc(pay.reference_externe)}</div>`
+        : esc(pay.moyen_paiement);
       return `<tr>
         <td>${esc(dateTimeFr(pay.created_at))}</td>
         <td><b>${esc(pay.package_id || 'Crédits')}</b></td>
         <td>${fmt(pay.montant_fcfa)} FCFA</td>
-        <td>${esc(pay.moyen_paiement)}</td>
+        <td>${moyen}</td>
         <td>${st}</td>
         <td>+${pay.credits_achetes}</td>
       </tr>`;
@@ -1131,17 +1138,17 @@ async function renderPricing() {
 let selectedPackForPayment = null;
 function openPaymentModal(pack) {
   selectedPackForPayment = pack;
-  $('#payModalTitle').textContent = `Acheter ${pack.nom}`;
+  $('#payModalTitle').textContent = `Commander ${pack.nom}`;
   $('#payModalDetails').innerHTML = `
     <div style="background:var(--bg); padding:12px; border-radius:8px; margin-bottom:12px;">
-      <div style="font-size:16px; font-weight:700;">${esc(pack.nom)} · ${pack.credits} génération(s)</div>
+      <div style="font-size:16px; font-weight:700;">${esc(pack.nom)} · ${pack.credits} génération(s) complète(s)</div>
       <div style="font-size:22px; font-weight:800; color:var(--brand); margin-top:4px;">${fmt(pack.prix_fcfa)} FCFA</div>
     </div>
   `;
   const msgEl = $('#payStatusMsg');
   if (msgEl) { msgEl.hidden = true; msgEl.textContent = ''; }
   const btn = $('#btnSubmitPayment');
-  if (btn) { btn.disabled = false; btn.textContent = 'Payer & Obtenir mes crédits'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Confirmer ma commande'; }
   if (state.profile?.telephone) $('#payPhone').value = state.profile.telephone;
   $('#modalPayment').hidden = false;
 }
@@ -1156,22 +1163,26 @@ $$('.payment-method').forEach(pm => pm.addEventListener('click', () => {
 $('#btnSubmitPayment').addEventListener('click', async () => {
   const pack = selectedPackForPayment;
   if (!pack) return;
-  const provider = $('input[name=payProvider]:checked')?.value || 'wave';
+  const provider = $('input[name=payProvider]:checked')?.value || 'Wave';
   const phone = $('#payPhone').value.trim();
-  if (!phone) return toast('Indiquez votre numéro de téléphone mobile money.', true);
+  if (!phone) return toast('Indiquez votre numéro de téléphone émetteur du transfert.', true);
 
   const btn = $('#btnSubmitPayment');
   const msgEl = $('#payStatusMsg');
   btn.disabled = true;
-  btn.textContent = 'Connexion à PayTech…';
+  btn.textContent = 'Enregistrement de votre commande…';
   if (msgEl) {
     msgEl.hidden = false;
     msgEl.className = 'msg';
-    msgEl.textContent = 'Préparation du paiement sécurisé…';
+    msgEl.textContent = 'Création de la commande en cours…';
   }
 
   try {
-    // 1. Enregistre le paiement préliminaire dans Supabase
+    // Génération de la référence unique de commande
+    const randSuffix = Math.floor(1000 + Math.random() * 9000);
+    const refCmd = `FIN-${Date.now().toString(36).toUpperCase()}-${randSuffix}`;
+
+    // 1. Enregistre la commande dans Supabase avec statut 'pending'
     const { data: payRow, error: pErr } = await sb.from('payments').insert({
       user_id: state.user.id,
       package_id: pack.id,
@@ -1179,84 +1190,49 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
       montant_fcfa: pack.prix_fcfa,
       moyen_paiement: provider,
       telephone_paiement: phone,
+      reference_externe: refCmd,
       statut: 'pending'
     }).select().single();
 
     if (pErr) throw new Error(pErr.message);
 
-    // 2. Détermine l'URL du relais backend (Node.js en local / Cloudflare, ou PHP sur Hostinger)
-    const apiEndpoint = window.location.pathname.endsWith('.php')
-      ? 'api/paytech/request-payment.php'
-      : '/api/paytech/request-payment';
-
-    if (msgEl) msgEl.textContent = 'Initialisation du paiement PayTech (Wave / OM / CB)…';
-
-    const res = await fetch(apiEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        package_id: pack.id,
-        item_name: `${pack.nom} (${pack.credits} liasses)`,
-        item_price: pack.prix_fcfa,
-        credits: pack.credits,
-        target_payment: provider,
-        phone_number: phone,
-        user_id: state.user.id,
-        user_email: state.user.email,
-        full_name: state.profile?.nom_complet || '',
-        payment_id: payRow?.id || null
-      })
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || 'Échec de l\'initialisation auprès de PayTech.');
+    // 2. Mémorise le numéro de téléphone dans le profil si non renseigné
+    if (!state.profile?.telephone) {
+      await sb.from('profiles').update({ telephone: phone }).eq('id', state.user.id);
+      if (state.profile) state.profile.telephone = phone;
     }
 
-    // Sauvegarde la référence externe (ref_command) retournée par PayTech
-    if (data.ref_command && payRow?.id) {
-      await sb.from('payments').update({ reference_externe: data.ref_command }).eq('id', payRow.id);
-    }
+    closeModals();
 
-    // 3. Traitement selon mode (Simulation sans clés vs Clés réelles PayTech)
-    if (data.is_mock) {
-      // Clés PayTech non encore fournies : validation locale assistée pour test immédiat
-      if (msgEl) msgEl.textContent = 'Mode simulation sandbox : attribution des crédits…';
-      const { error: cErr } = await sb.rpc('complete_payment', { p_payment_id: payRow.id });
-      if (cErr) {
-        await sb.from('payments').update({ statut: 'completed' }).eq('id', payRow.id);
-        const newBal = (state.profile?.credits_balance || 0) + pack.credits;
-        await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
-        state.profile.credits_balance = newBal;
-      }
+    // 3. Information claire pour l'utilisateur
+    alert(
+      `✅ Commande enregistrée avec succès !\n\n` +
+      `Référence commande : ${refCmd}\n` +
+      `Pack : ${pack.nom} (+${pack.credits} générations)\n` +
+      `Montant à transférer : ${fmt(pack.prix_fcfa)} FCFA\n\n` +
+      `📱 Instructions de règlement :\n` +
+      `Effectuez le transfert de ${fmt(pack.prix_fcfa)} FCFA via ${provider} vers le numéro officiel FINSMART :\n` +
+      `👉 77 443 96 90 (Bénéficiaire : FINSMART)\n\n` +
+      `Dès réception de votre transfert, l'administrateur valide votre commande et vos crédits seront immédiatement activés sur votre compte.`
+    );
 
-      await refreshProfile();
-      closeModals();
-      toast(`[Sandbox] Paiement simulé avec succès (${data.ref_command}) ! +${pack.credits} crédits ajoutés.`);
-      if (location.hash === '#/pricing') renderPricing();
-    } else if (data.redirect_url) {
-      // Clés réelles PayTech : redirection vers l'écran de paiement officiel PayTech (Wave / Orange Money / Carte)
-      if (msgEl) {
-        msgEl.className = 'msg ok';
-        msgEl.textContent = 'Redirection vers la passerelle sécurisée PayTech en cours…';
-      }
-      btn.textContent = 'Redirection en cours…';
-      setTimeout(() => {
-        window.location.href = data.redirect_url;
-      }, 700);
+    toast(`Commande ${refCmd} créée ! En attente de votre transfert.`);
+
+    // 4. Actualise l'historique sur la page tarifs
+    if (location.hash === '#/pricing' || location.hash === '#pricing') {
+      renderPricing();
     }
   } catch (err) {
-    console.error('[Paiement PayTech] Erreur:', err);
+    console.error('[Commande Paiement] Erreur:', err);
     if (msgEl) {
       msgEl.hidden = false;
       msgEl.className = 'msg err';
       msgEl.textContent = 'Erreur : ' + err.message;
     }
-    toast('Échec du paiement : ' + err.message, true);
+    toast('Échec de la commande : ' + err.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Payer & Obtenir mes crédits';
+    btn.textContent = 'Confirmer ma commande';
   }
 });
 
@@ -1285,8 +1261,22 @@ async function renderAdmin() {
   adminRows = data || [];
   const clients = new Set(adminRows.map(r => r.profiles?.email)).size;
   const gen = adminRows.filter(r => r.generated_at).length, prets = adminRows.filter(r => r.rapport && r.rapport.pret).length;
-  $('#adminKpis').innerHTML = [['Clients', clients], ['Dossiers', adminRows.length], ['Liasses générées', gen], ['Prêtes au dépôt', prets]]
-    .map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
+  
+  // Récupère aussi les commandes en attente de validation
+  const { data: pendingPays } = await sb.from('payments').select('id').eq('statut', 'pending');
+  const pendingCount = pendingPays?.length || 0;
+
+  const tabBtn = $('[data-admin-tab="payments"]');
+  if (tabBtn) {
+    tabBtn.innerHTML = `Paiements & Commandes ${pendingCount ? `<span class="badge warn" style="margin-left:6px; font-size:11px;">${pendingCount} en attente</span>` : ''}`;
+  }
+
+  $('#adminKpis').innerHTML = [
+    ['Clients', clients],
+    ['Dossiers', adminRows.length],
+    ['Liasses générées', gen],
+    ['Commandes en attente', `<span style="color:${pendingCount ? '#b45309' : 'inherit'}">${pendingCount}</span>`]
+  ].map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
   drawAdmin();
 }
 
@@ -1322,18 +1312,40 @@ async function renderAdminPayments() {
   tb.innerHTML = '<tr><td colspan="8">Chargement des paiements…</td></tr>';
   const { data: pays, error } = await sb.from('payments').select('*, profiles(nom_complet, email)').order('created_at', { ascending: false });
   if (error) { tb.innerHTML = `<tr><td colspan="8" class="msg err">${esc(error.message)}</td></tr>`; return; }
-  if (!pays?.length) { tb.innerHTML = '<tr><td colspan="8" class="muted">Aucun paiement enregistré.</td></tr>'; return; }
+  if (!pays?.length) { tb.innerHTML = '<tr><td colspan="8" class="muted">Aucune commande ou paiement enregistré.</td></tr>'; return; }
+
+  // Met à jour le badge sur l'onglet admin si des commandes sont en attente
+  const pendingCount = pays.filter(p => p.statut === 'pending').length;
+  const tabBtn = $('[data-admin-tab="payments"]');
+  if (tabBtn) {
+    tabBtn.innerHTML = `Paiements & Commandes ${pendingCount ? `<span class="badge warn" style="margin-left:6px; font-size:11px;">${pendingCount} en attente</span>` : ''}`;
+  }
 
   tb.innerHTML = pays.map(p => {
-    const st = p.statut === 'completed' ? '<span class="badge ok">Validé</span>' : p.statut === 'pending' ? '<span class="badge warn">En attente</span>' : '<span class="badge bad">' + esc(p.statut) + '</span>';
-    const action = p.statut === 'pending' ? `<button class="btn ok sm" data-approve-pay="${p.id}">Valider & Créditer</button>` : '';
+    const st = p.statut === 'completed' 
+      ? '<span class="badge ok">Validé</span>' 
+      : p.statut === 'pending' 
+      ? '<span class="badge warn">En attente</span>' 
+      : '<span class="badge bad">' + esc(p.statut) + '</span>';
+
+    const action = p.statut === 'pending' 
+      ? `<div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn ok sm" data-approve-pay="${p.id}" title="Valider et créditer immédiatement le client">✅ Valider & Créditer</button>
+          <button class="btn bad sm" data-reject-pay="${p.id}" title="Rejeter / Annuler cette commande">❌ Rejeter</button>
+        </div>` 
+      : `<span class="muted small">—</span>`;
+
+    const moyenCell = p.reference_externe
+      ? `<b>${esc(p.moyen_paiement)}</b><div class="small muted" style="font-family:monospace; font-weight:600; font-size:11px;">${esc(p.reference_externe)}</div>`
+      : esc(p.moyen_paiement);
+
     return `<tr>
       <td>${esc(dateTimeFr(p.created_at))}</td>
       <td><b>${esc(p.profiles?.nom_complet || '')}</b><div class="small muted">${esc(p.profiles?.email || '')}</div></td>
       <td>${esc(p.package_id || 'crédits')} (+${p.credits_achetes})</td>
       <td><b>${fmt(p.montant_fcfa)} FCFA</b></td>
-      <td>${esc(p.moyen_paiement)}</td>
-      <td>${esc(p.telephone_paiement || '—')}</td>
+      <td>${moyenCell}</td>
+      <td><a href="tel:${esc(p.telephone_paiement || '')}" style="color:inherit; font-weight:600;">${esc(p.telephone_paiement || '—')}</a></td>
       <td>${st}</td>
       <td>${action}</td>
     </tr>`;
@@ -1341,13 +1353,60 @@ async function renderAdminPayments() {
 
   tb.querySelectorAll('[data-approve-pay]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.approvePay;
+    const pay = pays.find(x => x.id === id);
+    const clientName = pay?.profiles?.nom_complet || pay?.profiles?.email || 'ce client';
+    if (!confirm(`Confirmez-vous la réception du transfert de ${fmt(pay?.montant_fcfa || 0)} FCFA et l'attribution immédiate de +${pay?.credits_achetes} crédits à ${clientName} ?`)) {
+      return;
+    }
     b.disabled = true;
-    const { error: err } = await sb.rpc('complete_payment', { p_payment_id: id });
+    b.textContent = 'Validation…';
+
+    let { error: err } = await sb.rpc('complete_payment', { p_payment_id: id });
+    if (err) {
+      console.warn('RPC complete_payment fallback direct:', err);
+      try {
+        await sb.from('payments').update({ statut: 'completed' }).eq('id', id);
+        if (pay) {
+          const { data: prof } = await sb.from('profiles').select('credits_balance').eq('id', pay.user_id).single();
+          const newBal = (prof?.credits_balance || 0) + (pay.credits_achetes || 0);
+          await sb.from('profiles').update({ credits_balance: newBal }).eq('id', pay.user_id);
+          await sb.from('credit_ledger').insert({
+            user_id: pay.user_id,
+            type_mouvement: 'achat',
+            montant_credits: pay.credits_achetes,
+            solde_avant: prof?.credits_balance || 0,
+            solde_apres: newBal,
+            motif: `Commande ${pay.reference_externe || id} validée manuellement par admin`,
+            payment_id: id
+          });
+        }
+        err = null;
+      } catch (fallbackErr) {
+        err = fallbackErr;
+      }
+    }
+
     if (err) {
       toast('Erreur validation : ' + err.message, true);
       b.disabled = false;
+      b.textContent = '✅ Valider & Créditer';
     } else {
-      toast('Paiement validé et crédits alloués !');
+      toast(`Paiement validé ! +${pay?.credits_achetes || 0} crédits alloués à ${clientName}.`);
+      await refreshProfile();
+      renderAdminPayments();
+    }
+  }));
+
+  tb.querySelectorAll('[data-reject-pay]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.dataset.rejectPay;
+    if (!confirm('Rejeter cette commande ? Aucun crédit ne sera attribué au client.')) return;
+    b.disabled = true;
+    const { error: err } = await sb.from('payments').update({ statut: 'cancelled' }).eq('id', id);
+    if (err) {
+      toast('Erreur rejet : ' + err.message, true);
+      b.disabled = false;
+    } else {
+      toast('Commande rejetée.');
       renderAdminPayments();
     }
   }));

@@ -41,6 +41,7 @@ AddDefaultCharset UTF-8
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteRule ^api/paytech/request-payment$ api/paytech/request-payment.php [L,QSA]
+  RewriteRule ^api/paytech/status$ api/paytech/status.php [L,QSA]
   RewriteRule ^api/paytech/ipn$ api/paytech/ipn.php [L,QSA]
 </IfModule>
 

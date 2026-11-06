@@ -127,8 +127,9 @@ async function onSession(session) {
   if (!state.user) { show('auth'); return; }
   await refreshProfile();
   await checkPaymentReturnParams();
-  $('#whoami').textContent = state.profile.nom_complet || state.user.email;
-  $('#navAdmin').hidden = !state.profile.is_admin;
+  const isAdmin = !!state.profile?.is_admin;
+  $('#whoami').innerHTML = `${esc(state.profile.nom_complet || state.user.email)}${isAdmin ? ' <span class="badge ok" style="font-size:10px; padding:2px 7px; font-weight:800; background:#065f46; color:#fff; border-radius:12px; margin-left:6px; vertical-align:middle;">👑 ADMIN</span>' : ''}`;
+  $('#navAdmin').hidden = !isAdmin;
   route();
 }
 
@@ -493,7 +494,11 @@ async function checkStep4Monetization() {
   }
 
   const s = currentMonetizationStatus;
-  if (s.is_full_version) {
+  if (state.profile?.is_admin) {
+    box.innerHTML = `<div class="status-banner ok" style="border-left: 4px solid #10b981; background:#ecfdf5;">
+      <div><strong style="color:#065f46;">👑 Privilège Super-Administrateur Actif</strong><div class="small">En tant qu'administrateur, vous disposez d'un accès illimité : génération complète officielle (55 onglets et 36 notes) autorisée sans restriction.</div></div>
+    </div>`;
+  } else if (s.is_full_version) {
     box.innerHTML = `<div class="status-banner ok">
       <div><strong>Liasse complète officielle débloquée</strong><div class="small">Ce dossier dispose d'un accès illimité aux 55 onglets SYSCOHADA (aucun crédit supplémentaire requis).</div></div>
     </div>`;
@@ -521,8 +526,8 @@ async function promptGeneration() {
   await checkStep4Monetization();
   const s = currentMonetizationStatus;
 
-  // Si le dossier est déjà débloqué en version complète, génère directement
-  if (s.is_full_version) {
+  // L'administrateur ou un dossier déjà débloqué génère directement la liasse complète
+  if (state.profile?.is_admin || s.is_full_version) {
     return executeGeneration('paid');
   }
 
@@ -1310,9 +1315,17 @@ $('#adminTable').addEventListener('change', async e => {
 async function renderAdminPayments() {
   const tb = $('#adminPaymentsTable tbody');
   tb.innerHTML = '<tr><td colspan="8">Chargement des paiements…</td></tr>';
-  const { data: pays, error } = await sb.from('payments').select('*, profiles(nom_complet, email)').order('created_at', { ascending: false });
+  const { data: pays, error } = await sb.from('payments').select('*').order('created_at', { ascending: false });
   if (error) { tb.innerHTML = `<tr><td colspan="8" class="msg err">${esc(error.message)}</td></tr>`; return; }
   if (!pays?.length) { tb.innerHTML = '<tr><td colspan="8" class="muted">Aucune commande ou paiement enregistré.</td></tr>'; return; }
+
+  // Charge les profils clients de manière découplée (compatible avec tous les schémas PostgREST)
+  const userIds = [...new Set(pays.map(p => p.user_id).filter(Boolean))];
+  const profilesMap = {};
+  if (userIds.length) {
+    const { data: profs } = await sb.from('profiles').select('id, nom_complet, email, telephone').in('id', userIds);
+    (profs || []).forEach(p => { profilesMap[p.id] = p; });
+  }
 
   // Met à jour le badge sur l'onglet admin si des commandes sont en attente
   const pendingCount = pays.filter(p => p.statut === 'pending').length;
@@ -1339,13 +1352,18 @@ async function renderAdminPayments() {
       ? `<b>${esc(p.moyen_paiement)}</b><div class="small muted" style="font-family:monospace; font-weight:600; font-size:11px;">${esc(p.reference_externe)}</div>`
       : esc(p.moyen_paiement);
 
+    const prof = profilesMap[p.user_id] || {};
+    const clientNom = prof.nom_complet || 'Client';
+    const clientEmail = prof.email || '';
+    const phoneDisplay = p.telephone_paiement || prof.telephone || '—';
+
     return `<tr>
       <td>${esc(dateTimeFr(p.created_at))}</td>
-      <td><b>${esc(p.profiles?.nom_complet || '')}</b><div class="small muted">${esc(p.profiles?.email || '')}</div></td>
+      <td><b>${esc(clientNom)}</b><div class="small muted">${esc(clientEmail)}</div></td>
       <td>${esc(p.package_id || 'crédits')} (+${p.credits_achetes})</td>
       <td><b>${fmt(p.montant_fcfa)} FCFA</b></td>
       <td>${moyenCell}</td>
-      <td><a href="tel:${esc(p.telephone_paiement || '')}" style="color:inherit; font-weight:600;">${esc(p.telephone_paiement || '—')}</a></td>
+      <td><a href="tel:${esc(phoneDisplay)}" style="color:inherit; font-weight:600;">${esc(phoneDisplay)}</a></td>
       <td>${st}</td>
       <td>${action}</td>
     </tr>`;
@@ -1354,7 +1372,8 @@ async function renderAdminPayments() {
   tb.querySelectorAll('[data-approve-pay]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.approvePay;
     const pay = pays.find(x => x.id === id);
-    const clientName = pay?.profiles?.nom_complet || pay?.profiles?.email || 'ce client';
+    const prof = profilesMap[pay?.user_id] || {};
+    const clientName = prof.nom_complet || prof.email || 'ce client';
     if (!confirm(`Confirmez-vous la réception du transfert de ${fmt(pay?.montant_fcfa || 0)} FCFA et l'attribution immédiate de +${pay?.credits_achetes} crédits à ${clientName} ?`)) {
       return;
     }
@@ -1367,14 +1386,14 @@ async function renderAdminPayments() {
       try {
         await sb.from('payments').update({ statut: 'completed' }).eq('id', id);
         if (pay) {
-          const { data: prof } = await sb.from('profiles').select('credits_balance').eq('id', pay.user_id).single();
-          const newBal = (prof?.credits_balance || 0) + (pay.credits_achetes || 0);
+          const { data: profRow } = await sb.from('profiles').select('credits_balance').eq('id', pay.user_id).single();
+          const newBal = (profRow?.credits_balance || 0) + (pay.credits_achetes || 0);
           await sb.from('profiles').update({ credits_balance: newBal }).eq('id', pay.user_id);
           await sb.from('credit_ledger').insert({
             user_id: pay.user_id,
             type_mouvement: 'achat',
             montant_credits: pay.credits_achetes,
-            solde_avant: prof?.credits_balance || 0,
+            solde_avant: profRow?.credits_balance || 0,
             solde_apres: newBal,
             motif: `Commande ${pay.reference_externe || id} validée manuellement par admin`,
             payment_id: id
@@ -1418,16 +1437,27 @@ async function renderAdminCredits() {
   const { data: profs } = await sb.from('profiles').select('id, nom_complet, email, credits_balance').order('nom_complet');
   sel.innerHTML = (profs || []).map(p => `<option value="${p.id}">${esc(p.nom_complet || p.email)} (Solde actuel : ${p.credits_balance || 0} crédits)</option>`).join('');
 
-  // Charge le journal d'audit
+  // Charge le journal d'audit de manière découplée
   const tb = $('#adminLedgerTable tbody');
-  const { data: ledgers } = await sb.from('credit_ledger').select('*, profiles(nom_complet, email)').order('created_at', { ascending: false }).limit(50);
+  const { data: ledgers, error: lErr } = await sb.from('credit_ledger').select('*').order('created_at', { ascending: false }).limit(50);
+  if (lErr) { tb.innerHTML = `<tr><td colspan="6" class="msg err">${esc(lErr.message)}</td></tr>`; return; }
+  
   if (ledgers?.length) {
+    const ledgerUserIds = [...new Set(ledgers.map(l => l.user_id).filter(Boolean))];
+    const ledgerProfMap = {};
+    if (ledgerUserIds.length) {
+      const { data: lProfs } = await sb.from('profiles').select('id, nom_complet, email').in('id', ledgerUserIds);
+      (lProfs || []).forEach(p => { ledgerProfMap[p.id] = p; });
+    }
+
     tb.innerHTML = ledgers.map(l => {
       const delta = l.montant_credits > 0 ? `+${l.montant_credits}` : String(l.montant_credits);
       const cls = l.montant_credits > 0 ? 'ok' : l.montant_credits < 0 ? 'bad' : 'neutral';
+      const prof = ledgerProfMap[l.user_id] || {};
+      const clientName = prof.nom_complet || prof.email || 'Client';
       return `<tr>
         <td>${esc(dateTimeFr(l.created_at))}</td>
-        <td>${esc(l.profiles?.nom_complet || l.profiles?.email || '')}</td>
+        <td>${esc(clientName)}</td>
         <td><span class="badge ${cls}">${delta} crédit(s)</span></td>
         <td><b>${l.solde_apres}</b></td>
         <td>${esc(l.motif)}</td>

@@ -31,11 +31,21 @@ AddDefaultCharset UTF-8
   Header set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
 
-# 6. Protection des fichiers sensibles
-<FilesMatch "^(paytech\.config.*\.json|\.env.*)$">
+# 6. Protection des fichiers sensibles & désactivation de l'exploration
+Options -Indexes
+
+<FilesMatch "(\.git|\.env|paytech\.config|\.sql|\.log|package\.json|\.sh)$">
   Order allow,deny
   Deny from all
 </FilesMatch>
+
+# 7. Redirection forcée vers HTTPS
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} off
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
 
 # 7. Réécriture des routes API PayTech (Hostinger)
 <IfModule mod_rewrite.c>

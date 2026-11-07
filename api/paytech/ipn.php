@@ -33,7 +33,8 @@ if ($config['is_ready']) {
 }
 
 if ($typeEvent === 'sale_complete' && !empty($refCommand)) {
-    // Appel de la procédure Supabase complete_payment_by_ref
+    $completed = false;
+    // 1. Appel de la procédure Supabase complete_payment_by_ref
     $rpcUrl = $SUPABASE_URL . '/rest/v1/rpc/complete_payment_by_ref';
     $rpcPayload = [
         'p_ref_command' => $refCommand,
@@ -52,6 +53,97 @@ if ($typeEvent === 'sale_complete' && !empty($refCommand)) {
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
     $res = curl_exec($ch);
     curl_close($ch);
+
+    if ($res) {
+        $resObj = json_decode($res, true);
+        if (!empty($resObj['ok'])) {
+            $completed = true;
+        }
+    }
+
+    // 2. Secours direct REST si la fonction RPC n'est pas installée
+    if (!$completed) {
+        // Recherche du paiement
+        $pUrl = $SUPABASE_URL . '/rest/v1/payments?reference_externe=eq.' . urlencode($refCommand) . '&select=*';
+        $ch2 = curl_init($pUrl);
+        curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch2, CURLOPT_HTTPHEADER, [
+            'apikey: ' . $SUPABASE_KEY,
+            'Authorization: Bearer ' . $SUPABASE_KEY
+        ]);
+        curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, true);
+        $pRes = curl_exec($ch2);
+        curl_close($ch2);
+
+        $payments = json_decode($pRes, true);
+        $payRow = (!empty($payments) && is_array($payments)) ? $payments[0] : null;
+
+        if ($payRow && $payRow['statut'] !== 'completed') {
+            $userId = $payRow['user_id'];
+            $creditsToAdd = !empty($payRow['credits_achetes']) ? (int)$payRow['credits_achetes'] : 1;
+
+            // Récupération solde actuel
+            $profUrl = $SUPABASE_URL . '/rest/v1/profiles?id=eq.' . urlencode($userId) . '&select=credits_balance';
+            $ch3 = curl_init($profUrl);
+            curl_setopt($ch3, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch3, CURLOPT_HTTPHEADER, [
+                'apikey: ' . $SUPABASE_KEY,
+                'Authorization: Bearer ' . $SUPABASE_KEY
+            ]);
+            $profRes = curl_exec($ch3);
+            curl_close($ch3);
+
+            $profs = json_decode($profRes, true);
+            $oldBal = (!empty($profs) && isset($profs[0]['credits_balance'])) ? (int)$profs[0]['credits_balance'] : 0;
+            $newBal = $oldBal + $creditsToAdd;
+
+            // Mise à jour profiles
+            $ch4 = curl_init($SUPABASE_URL . '/rest/v1/profiles?id=eq.' . urlencode($userId));
+            curl_setopt($ch4, CURLOPT_CUSTOMREQUEST, 'PATCH');
+            curl_setopt($ch4, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch4, CURLOPT_POSTFIELDS, json_encode(['credits_balance' => $newBal]));
+            curl_setopt($ch4, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'apikey: ' . $SUPABASE_KEY,
+                'Authorization: Bearer ' . $SUPABASE_KEY
+            ]);
+            curl_exec($ch4);
+            curl_close($ch4);
+
+            // Mise à jour payments
+            $ch5 = curl_init($SUPABASE_URL . '/rest/v1/payments?id=eq.' . urlencode($payRow['id']));
+            curl_setopt($ch5, CURLOPT_CUSTOMREQUEST, 'PATCH');
+            curl_setopt($ch5, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch5, CURLOPT_POSTFIELDS, json_encode(['statut' => 'completed', 'updated_at' => date('c')]));
+            curl_setopt($ch5, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'apikey: ' . $SUPABASE_KEY,
+                'Authorization: Bearer ' . $SUPABASE_KEY
+            ]);
+            curl_exec($ch5);
+            curl_close($ch5);
+
+            // Grand livre credit_ledger
+            $ch6 = curl_init($SUPABASE_URL . '/rest/v1/credit_ledger');
+            curl_setopt($ch6, CURLOPT_POST, true);
+            curl_setopt($ch6, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch6, CURLOPT_POSTFIELDS, json_encode([
+                'user_id' => $userId,
+                'montant_credits' => $creditsToAdd,
+                'solde_apres' => $newBal,
+                'motif' => 'purchase',
+                'payment_id' => $payRow['id'],
+                'commentaire' => 'Achat ' . ($payRow['package_id'] ?? 'crédits') . ' validé via IPN'
+            ]));
+            curl_setopt($ch6, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'apikey: ' . $SUPABASE_KEY,
+                'Authorization: Bearer ' . $SUPABASE_KEY
+            ]);
+            curl_exec($ch6);
+            curl_close($ch6);
+        }
+    }
 }
 
 echo json_encode(['success' => 1, 'message' => 'Notification reçue']);

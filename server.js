@@ -291,7 +291,8 @@ async function handlePayTechApi(req, res, parsedUrl) {
       if (typeEvent === 'sale_complete') {
         console.log(`[PayTech IPN] Validation du paiement ${refCommand} (${itemPrice} FCFA)`);
 
-        // Appel de la procédure Supabase complete_payment_by_ref
+        let completed = false;
+        // 1. Tentative d'appel de la procédure Supabase complete_payment_by_ref
         try {
           const sbRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/complete_payment_by_ref`, {
             method: 'POST',
@@ -306,9 +307,91 @@ async function handlePayTechApi(req, res, parsedUrl) {
             }),
           });
           const sbData = await sbRes.json();
-          console.log('[PayTech IPN] Résultat Supabase complete_payment_by_ref:', sbData);
+          if (sbData && sbData.ok) {
+            completed = true;
+            console.log('[PayTech IPN] Succès via complete_payment_by_ref:', sbData);
+          } else {
+            console.warn('[PayTech IPN] RPC complete_payment_by_ref résultat non concluant:', sbData);
+          }
         } catch (sbErr) {
-          console.error('[PayTech IPN] Erreur appel Supabase:', sbErr);
+          console.error('[PayTech IPN] Erreur appel RPC:', sbErr);
+        }
+
+        // 2. Fallback direct REST si la RPC n'a pas validé la commande
+        if (!completed) {
+          try {
+            const pRes = await fetch(`${SUPABASE_URL}/rest/v1/payments?reference_externe=eq.${encodeURIComponent(refCommand)}&select=*`, {
+              headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+              }
+            });
+            const payments = await pRes.json();
+            const payRow = payments?.[0];
+
+            if (payRow && payRow.statut !== 'completed') {
+              const userId = payRow.user_id;
+              const creditsToAdd = Number(payRow.credits_achetes) || 1;
+
+              // Lecture solde actuel
+              const profRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=credits_balance`, {
+                headers: {
+                  'apikey': SUPABASE_KEY,
+                  'Authorization': `Bearer ${SUPABASE_KEY}`,
+                }
+              });
+              const profData = await profRes.json();
+              const oldBal = Number(profData?.[0]?.credits_balance || 0);
+              const newBal = oldBal + creditsToAdd;
+
+              // Créditer le profil
+              await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': SUPABASE_KEY,
+                  'Authorization': `Bearer ${SUPABASE_KEY}`,
+                },
+                body: JSON.stringify({ credits_balance: newBal }),
+              });
+
+              // Mettre à jour payments -> completed
+              await fetch(`${SUPABASE_URL}/rest/v1/payments?id=eq.${payRow.id}`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': SUPABASE_KEY,
+                  'Authorization': `Bearer ${SUPABASE_KEY}`,
+                },
+                body: JSON.stringify({
+                  statut: 'completed',
+                  updated_at: new Date().toISOString(),
+                }),
+              });
+
+              // Écrire l'audit dans credit_ledger
+              await fetch(`${SUPABASE_URL}/rest/v1/credit_ledger`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': SUPABASE_KEY,
+                  'Authorization': `Bearer ${SUPABASE_KEY}`,
+                },
+                body: JSON.stringify({
+                  user_id: userId,
+                  montant_credits: creditsToAdd,
+                  solde_apres: newBal,
+                  motif: 'purchase',
+                  payment_id: payRow.id,
+                  commentaire: `Achat ${payRow.package_id || 'crédits'} validé via IPN`,
+                }),
+              });
+
+              console.log(`[PayTech IPN] Fallback REST réussi : +${creditsToAdd} crédits alloués à l'utilisateur ${userId}. Solde = ${newBal}`);
+            }
+          } catch (fbErr) {
+            console.error('[PayTech IPN] Erreur secours REST:', fbErr);
+          }
         }
       }
 

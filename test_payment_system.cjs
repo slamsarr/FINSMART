@@ -46,9 +46,9 @@ async function runTests() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         package_id: 'starter',
-        item_name: 'Pack Starter (5 liasses)',
-        item_price: 25000,
-        credits: 5,
+        item_name: 'Pack Starter (3 liasses)',
+        item_price: 50000,
+        credits: 3,
         target_payment: 'wave',
         phone_number: '+221 77 123 45 67',
         user_id: '00000000-0000-0000-0000-000000000000',
@@ -79,11 +79,11 @@ async function runTests() {
       body: JSON.stringify({
         type_event: 'sale_complete',
         ref_command: 'FIN-TEST-001',
-        item_price: 25000,
+        item_price: 50000,
         token: 'tok_test_123',
         api_key_sha256: keySha,
         api_secret_sha256: secretSha,
-        custom_field: JSON.stringify({ credits: 5 })
+        custom_field: JSON.stringify({ credits: 3 })
       })
     });
     const ipnData = await ipnRes.json();

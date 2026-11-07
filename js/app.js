@@ -102,6 +102,7 @@ async function checkPaymentReturnParams() {
   const url = new URL(window.location.href);
   const paymentStatus = url.searchParams.get('payment');
   const ref = url.searchParams.get('ref');
+  const mockCredits = parseInt(url.searchParams.get('credits') || '0', 10);
 
   if (paymentStatus === 'success') {
     url.searchParams.delete('payment');
@@ -110,9 +111,98 @@ async function checkPaymentReturnParams() {
     url.searchParams.delete('credits');
     window.history.replaceState({}, document.title, url.pathname + url.hash);
 
+    let creditsAdded = 0;
+    let rpcDone = false;
+
+    // 1. Appel de la procédure stockée Supabase complete_payment_by_ref
+    if (ref) {
+      try {
+        const { data: rpcRes, error: rpcErr } = await sb.rpc('complete_payment_by_ref', { p_ref_command: ref });
+        if (!rpcErr && rpcRes && rpcRes.ok) {
+          rpcDone = true;
+          creditsAdded = Number(rpcRes.credits_added) || 0;
+        }
+      } catch (e) {
+        console.warn('RPC complete_payment_by_ref non disponible ou erreur:', e);
+      }
+    }
+
+    // 2. Fallback de sécurité côté client si la RPC n'a pas traité
+    if (!rpcDone && ref && state.user?.id) {
+      try {
+        const { data: payRow } = await sb.from('payments')
+          .select('*')
+          .eq('reference_externe', ref)
+          .maybeSingle();
+
+        if (payRow) {
+          const creditsToCredit = Number(payRow.credits_achetes) || mockCredits || 1;
+
+          if (payRow.statut === 'pending') {
+            // Lecture du solde actuel dans profiles
+            const { data: profData } = await sb.from('profiles').select('credits_balance').eq('id', state.user.id).single();
+            const currentBal = Number(profData?.credits_balance || 0);
+            const newBal = currentBal + creditsToCredit;
+
+            // Marquer le paiement comme complété
+            await sb.from('payments').update({
+              statut: 'completed',
+              updated_at: new Date().toISOString()
+            }).eq('id', payRow.id);
+
+            // Créditer immédiatement le solde du profil
+            await sb.from('profiles').update({
+              credits_balance: newBal
+            }).eq('id', state.user.id);
+
+            // Tracer l'écriture dans le journal d'audit
+            await sb.from('credit_ledger').insert({
+              user_id: state.user.id,
+              montant_credits: creditsToCredit,
+              solde_apres: newBal,
+              motif: 'purchase',
+              payment_id: payRow.id,
+              commentaire: `Achat ${payRow.package_id || 'crédits'} (PayTech ${ref})`
+            }).catch(() => {});
+
+            creditsAdded = creditsToCredit;
+            rpcDone = true;
+          } else if (payRow.statut === 'completed') {
+            creditsAdded = creditsToCredit;
+            rpcDone = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Erreur fallback validation retour client:', err);
+      }
+    }
+
+    // 3. Cas simulation mock / sandbox directe
+    if (!rpcDone && mockCredits > 0 && state.user?.id) {
+      try {
+        const { data: profData } = await sb.from('profiles').select('credits_balance').eq('id', state.user.id).single();
+        const currentBal = Number(profData?.credits_balance || 0);
+        const newBal = currentBal + mockCredits;
+        await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
+        creditsAdded = mockCredits;
+      } catch (e) {
+        console.warn('Erreur mock credit:', e);
+      }
+    }
+
+    // Rechargement immédiat du profil et actualisation visuelle des compteurs
     await refreshProfile();
-    toast(`Paiement PayTech validé avec succès (${ref || ''}) ! Vos crédits sont disponibles.`);
-    if (location.hash === '#/pricing') renderPricing();
+    updateCreditsDisplay();
+
+    const soldeActuel = state.profile?.credits_balance ?? '—';
+    const nbCredits = creditsAdded || 1;
+    toast(`✅ Paiement validé avec succès (${ref || 'PayTech'}) ! +${nbCredits} crédit${nbCredits > 1 ? 's' : ''} ajouté${nbCredits > 1 ? 's' : ''}. Nouveau solde : ${soldeActuel} crédit${soldeActuel > 1 ? 's' : ''}.`);
+
+    if (location.hash === '#/pricing' || location.hash === '#pricing') {
+      renderPricing();
+    } else if (location.hash === '' || location.hash === '#/' || location.hash === '#dashboard') {
+      renderDashboard();
+    }
   } else if (paymentStatus === 'cancel') {
     url.searchParams.delete('payment');
     url.searchParams.delete('ref');
@@ -614,8 +704,25 @@ async function executeGeneration(mode) {
     } catch (err) {
       // Si la fonction RPC n'est pas encore déployée dans Supabase, secours direct
       console.warn('RPC consume_generation_credit non disponible, repli direct:', err.message);
-      if (mode === 'paid' && (state.profile?.credits_balance || 0) < 1) {
-        throw new Error('Solde de crédits insuffisant.');
+      if (mode === 'paid') {
+        const cur = Number(state.profile?.credits_balance || 0);
+        if (cur < 1) {
+          throw new Error('Solde de crédits insuffisant. Veuillez recharger votre compte dans l\'onglet Tarifs & Crédits.');
+        }
+        const newBal = cur - 1;
+        await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
+        await sb.from('credit_ledger').insert({
+          user_id: state.user.id,
+          company_id: d.exercise.company_id,
+          exercise_id: d.exercise.id,
+          montant_credits: -1,
+          solde_apres: newBal,
+          motif: 'generation_complete',
+          commentaire: 'Déblocage liasse complète DGID (mode direct)'
+        }).catch(() => {});
+        charged = true;
+      } else if (mode === 'free') {
+        await sb.from('companies').update({ free_generation_used: true }).eq('id', d.exercise.company_id).catch(() => {});
       }
     }
 
@@ -1053,35 +1160,49 @@ async function renderPricing() {
   grid.innerHTML = '<p class="muted">Chargement des tarifs…</p>';
 
   let packs = DEFAULT_PACKS;
-  const { data: dbPacks } = await sb.from('credit_packages').select('*').eq('is_active', true).order('sort_order');
-  const isDbOutdated = !dbPacks?.length || dbPacks.some(p => (p.id === 'unit' && p.prix_fcfa === 10000) || p.id === 'expert');
-  if (dbPacks?.length && !isDbOutdated) {
-    packs = dbPacks;
-  }
+  try {
+    const { data: dbPacks } = await sb.from('credit_packages').select('*').eq('is_active', true).order('sort_order');
+    const isDbOutdated = !dbPacks?.length || dbPacks.some(p => 
+      (p.id === 'unit' && p.prix_fcfa !== 20000) ||
+      (p.id === 'starter' && p.prix_fcfa !== 50000) ||
+      (p.id === 'business' && p.prix_fcfa !== 160000) ||
+      (p.id === 'cabinet_expert' && p.prix_fcfa !== 400000) ||
+      p.id === 'expert' ||
+      p.id === 'pro'
+    );
+    if (dbPacks?.length && !isDbOutdated) {
+      packs = dbPacks;
+    } else {
+      packs = DEFAULT_PACKS;
+    }
 
-  // Si l'administrateur est connecté, mise à jour transparente de la table Supabase
-  if (state.profile?.is_admin && isDbOutdated) {
-    (async () => {
-      try {
-        await sb.from('credit_packages').update({ is_active: false }).neq('id', '');
-        for (let i = 0; i < DEFAULT_PACKS.length; i++) {
-          const p = DEFAULT_PACKS[i];
-          await sb.from('credit_packages').upsert({
-            id: p.id,
-            nom: p.nom,
-            credits: p.credits,
-            prix_fcfa: p.prix_fcfa,
-            prix_unitaire_fcfa: p.prix_unitaire_fcfa,
-            economie_pct: p.economie_pct,
-            description: p.description,
-            is_active: true,
-            sort_order: i + 1
-          });
+    // Si l'administrateur est connecté, mise à jour transparente de la table Supabase
+    if (state.profile?.is_admin && isDbOutdated) {
+      (async () => {
+        try {
+          await sb.from('credit_packages').update({ is_active: false }).neq('id', '');
+          for (let i = 0; i < DEFAULT_PACKS.length; i++) {
+            const p = DEFAULT_PACKS[i];
+            await sb.from('credit_packages').upsert({
+              id: p.id,
+              nom: p.nom,
+              credits: p.credits,
+              prix_fcfa: p.prix_fcfa,
+              prix_unitaire_fcfa: p.prix_unitaire_fcfa,
+              economie_pct: p.economie_pct,
+              description: p.description,
+              is_active: true,
+              sort_order: i + 1
+            });
+          }
+        } catch (e) {
+          console.warn('Synchro auto credit_packages:', e.message);
         }
-      } catch (e) {
-        console.warn('Synchro auto credit_packages:', e.message);
-      }
-    })();
+      })();
+    }
+  } catch (err) {
+    console.warn('Erreur chargement packs DB:', err);
+    packs = DEFAULT_PACKS;
   }
 
   grid.innerHTML = packs.map(p => {
@@ -1481,13 +1602,12 @@ async function renderAdminPayments() {
           await sb.from('profiles').update({ credits_balance: newBal }).eq('id', pay.user_id);
           await sb.from('credit_ledger').insert({
             user_id: pay.user_id,
-            type_mouvement: 'achat',
             montant_credits: pay.credits_achetes,
-            solde_avant: profRow?.credits_balance || 0,
             solde_apres: newBal,
-            motif: `Commande ${pay.reference_externe || id} validée manuellement par admin`,
-            payment_id: id
-          });
+            motif: 'purchase',
+            payment_id: id,
+            commentaire: `Commande ${pay.reference_externe || id} validée manuellement par admin`
+          }).catch(() => {});
         }
         err = null;
       } catch (fallbackErr) {
@@ -1566,11 +1686,31 @@ $('#formAdminCredit')?.addEventListener('submit', async e => {
   const motif = $('#adminCreditMotif').value.trim();
   if (!userId || !delta || !motif) return toast('Remplissez tous les champs.', true);
 
-  const { error } = await sb.rpc('admin_adjust_credits', {
+  let { error } = await sb.rpc('admin_adjust_credits', {
     p_target_user_id: userId,
     p_credits_delta: delta,
     p_motif: motif
   });
+
+  if (error) {
+    console.warn('RPC admin_adjust_credits non disponible, repli direct:', error);
+    try {
+      const { data: profRow } = await sb.from('profiles').select('credits_balance').eq('id', userId).single();
+      const oldBal = Number(profRow?.credits_balance || 0);
+      const newBal = Math.max(0, oldBal + delta);
+      await sb.from('profiles').update({ credits_balance: newBal }).eq('id', userId);
+      await sb.from('credit_ledger').insert({
+        user_id: userId,
+        montant_credits: delta,
+        solde_apres: newBal,
+        motif: 'admin_adjustment',
+        commentaire: motif || 'Ajustement manuel admin'
+      }).catch(() => {});
+      error = null;
+    } catch (fbErr) {
+      error = fbErr;
+    }
+  }
 
   if (error) {
     toast('Échec ajustement : ' + error.message, true);

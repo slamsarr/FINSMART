@@ -441,6 +441,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, {
       'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
     });
     res.end(data);
   });

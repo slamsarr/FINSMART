@@ -1,7 +1,7 @@
 {
   "_commentaire": "Identifiants PayTech Sénégal (https://paytech.sn)",
-  "api_key": "bbf5406850548cf3ea36b4cc5b7314d41b8af0b05636d5a331be1e7997c3b5f2",
-  "api_secret": "0b467b3ea23819de5ef18f1cc0d8de1abdd9add091addc00971c279a4db08508",
+  "api_key": "3987ced447189bc267a6ff62db2184b92321ede3579bd8e5232588862700aec4",
+  "api_secret": "4e39e64c60189d4545ecf3ef0269cd020556ddd0719ea93412ad6af32a3ac90e",
   "env": "test",
   "currency": "XOF",
   "ipn_url": "",

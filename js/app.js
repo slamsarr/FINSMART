@@ -693,36 +693,42 @@ async function executeGeneration(mode) {
   try {
     // 1. Débit ou enregistrement sécurisé côté serveur
     let charged = false;
-    try {
-      const { data: res, error: rpcErr } = await sb.rpc('consume_generation_credit', {
-        p_exercise_id: d.exercise.id,
-        p_requested_mode: mode
-      });
-      if (rpcErr) throw new Error(rpcErr.message);
-      if (!res.ok) throw new Error(res.error || 'Impossible de consommer le crédit.');
+    if (state.profile?.is_admin) {
+      // Privilège Super-Administrateur : génération illimitée sans décompte de crédits
+      await sb.from('exercises').update({ is_full_version: true, generation_type: 'paid' }).eq('id', d.exercise.id).catch(() => {});
       charged = true;
-    } catch (err) {
-      // Si la fonction RPC n'est pas encore déployée dans Supabase, secours direct
-      console.warn('RPC consume_generation_credit non disponible, repli direct:', err.message);
-      if (mode === 'paid') {
-        const cur = Number(state.profile?.credits_balance || 0);
-        if (cur < 1) {
-          throw new Error('Solde de crédits insuffisant. Veuillez recharger votre compte dans l\'onglet Tarifs & Crédits.');
-        }
-        const newBal = cur - 1;
-        await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
-        await sb.from('credit_ledger').insert({
-          user_id: state.user.id,
-          company_id: d.exercise.company_id,
-          exercise_id: d.exercise.id,
-          montant_credits: -1,
-          solde_apres: newBal,
-          motif: 'generation_complete',
-          commentaire: 'Déblocage liasse complète DGID (mode direct)'
-        }).catch(() => {});
+    } else {
+      try {
+        const { data: res, error: rpcErr } = await sb.rpc('consume_generation_credit', {
+          p_exercise_id: d.exercise.id,
+          p_requested_mode: mode
+        });
+        if (rpcErr) throw new Error(rpcErr.message);
+        if (!res.ok) throw new Error(res.error || 'Impossible de consommer le crédit.');
         charged = true;
-      } else if (mode === 'free') {
-        await sb.from('companies').update({ free_generation_used: true }).eq('id', d.exercise.company_id).catch(() => {});
+      } catch (err) {
+        // Si la fonction RPC n'est pas encore déployée dans Supabase, secours direct
+        console.warn('RPC consume_generation_credit non disponible, repli direct:', err.message);
+        if (mode === 'paid') {
+          const cur = Number(state.profile?.credits_balance || 0);
+          if (cur < 1) {
+            throw new Error('Solde de crédits insuffisant. Veuillez recharger votre compte dans l\'onglet Tarifs & Crédits.');
+          }
+          const newBal = cur - 1;
+          await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
+          await sb.from('credit_ledger').insert({
+            user_id: state.user.id,
+            company_id: d.exercise.company_id,
+            exercise_id: d.exercise.id,
+            montant_credits: -1,
+            solde_apres: newBal,
+            motif: 'generation_complete',
+            commentaire: 'Déblocage liasse complète DGID (mode direct)'
+          }).catch(() => {});
+          charged = true;
+        } else if (mode === 'free') {
+          await sb.from('companies').update({ free_generation_used: true }).eq('id', d.exercise.company_id).catch(() => {});
+        }
       }
     }
 
@@ -1463,19 +1469,36 @@ $$('[data-admin-tab]').forEach(tab => tab.addEventListener('click', () => {
   $('#adminTabDossiers').hidden = adminCurrentTab !== 'dossiers';
   $('#adminTabPayments').hidden = adminCurrentTab !== 'payments';
   $('#adminTabCredits').hidden = adminCurrentTab !== 'credits';
+  const tabUsers = $('#adminTabUsers');
+  if (tabUsers) tabUsers.hidden = adminCurrentTab !== 'users';
+
   if (adminCurrentTab === 'payments') renderAdminPayments();
   if (adminCurrentTab === 'credits') renderAdminCredits();
+  if (adminCurrentTab === 'users') renderAdminUsers();
 }));
 
 async function renderAdmin() {
   show('admin');
   const tb = $('#adminTable tbody'); tb.innerHTML = '<tr><td colspan="8">Chargement…</td></tr>';
   const { data, error } = await sb.from('exercises')
-    .select('id, exercice, date_fin, statut, is_full_version, generation_type, updated_at, generated_at, rapport, companies(nom, ninea, telephone, email_contact), profiles!exercises_created_by_fkey(nom_complet, email, telephone), exercise_files(type, storage_path, nom_original)')
+    .select('id, exercice, date_fin, statut, is_full_version, generation_type, updated_at, generated_at, rapport, created_by, company_id, companies(nom, ninea, telephone, email_contact), exercise_files(type, storage_path, nom_original)')
     .order('updated_at', { ascending: false });
   if (error) { tb.innerHTML = `<tr><td colspan="8" class="msg err">${esc(error.message)}</td></tr>`; return; }
-  adminRows = data || [];
-  const clients = new Set(adminRows.map(r => r.profiles?.email)).size;
+
+  // Charge les profils clients de manière découplée (robuste contre toute anomalie de foreign keys)
+  const userIds = [...new Set((data || []).map(r => r.created_by).filter(Boolean))];
+  const profilesMap = {};
+  if (userIds.length) {
+    const { data: profs } = await sb.from('profiles').select('id, nom_complet, email, telephone').in('id', userIds);
+    (profs || []).forEach(p => { profilesMap[p.id] = p; });
+  }
+
+  adminRows = (data || []).map(r => ({
+    ...r,
+    profiles: profilesMap[r.created_by] || {}
+  }));
+
+  const clients = new Set(adminRows.map(r => r.profiles?.email).filter(Boolean)).size;
   const gen = adminRows.filter(r => r.generated_at).length, prets = adminRows.filter(r => r.rapport && r.rapport.pret).length;
   
   // Récupère aussi les commandes en attente de validation
@@ -1720,6 +1743,85 @@ $('#formAdminCredit')?.addEventListener('submit', async e => {
     renderAdminCredits();
   }
 });
+
+let adminUsersList = [];
+async function renderAdminUsers() {
+  const tb = $('#adminUsersTable tbody');
+  tb.innerHTML = '<tr><td colspan="6">Chargement des utilisateurs…</td></tr>';
+  const { data: profs, error } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
+  if (error) { tb.innerHTML = `<tr><td colspan="6" class="msg err">${esc(error.message)}</td></tr>`; return; }
+  if (!profs?.length) { tb.innerHTML = '<tr><td colspan="6" class="muted">Aucun utilisateur enregistré.</td></tr>'; return; }
+  adminUsersList = profs;
+  drawAdminUsers();
+}
+
+function drawAdminUsers() {
+  const q = ($('#adminUsersSearch')?.value || '').trim().toLowerCase();
+  const rows = adminUsersList.filter(u => !q || [u.nom_complet, u.email, u.telephone].join(' ').toLowerCase().includes(q));
+  const tb = $('#adminUsersTable tbody');
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="muted">Aucun utilisateur correspondant.</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(u => {
+    const isMe = (u.id === state.user?.id);
+    const isAdmin = !!u.is_admin;
+    const roleBadge = isAdmin
+      ? '<span class="badge ok" style="background:#065f46; color:#fff; font-weight:700;">👑 Administrateur</span>'
+      : '<span class="badge neutral">Client</span>';
+    const actionBtn = isMe
+      ? '<span class="muted small" title="Votre compte actif">(Votre compte)</span>'
+      : (isAdmin
+          ? `<button class="btn bad sm" data-demote-user="${u.id}" data-email="${esc(u.email)}">Rétrograder en Client</button>`
+          : `<button class="btn ok sm" data-promote-user="${u.id}" data-email="${esc(u.email)}">👑 Nommer Administrateur</button>`);
+
+    return `<tr>
+      <td><b>${esc(u.nom_complet || 'Sans nom')}</b></td>
+      <td>${esc(u.email || '—')}</td>
+      <td>${esc(u.telephone || '—')}</td>
+      <td><b>${u.credits_balance || 0}</b> crédit(s)</td>
+      <td>${roleBadge}</td>
+      <td>${actionBtn}</td>
+    </tr>`;
+  }).join('');
+
+  tb.querySelectorAll('[data-promote-user]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.dataset.promoteUser;
+    const email = b.dataset.email;
+    if (!confirm(`Accorder les privilèges ADMINISTRATEUR à ${email} ?\n\nCet utilisateur aura accès au panneau administration, pourra consulter l'ensemble des dossiers clients, valider les commandes et gérer les crédits.`)) return;
+    b.disabled = true;
+    b.textContent = 'Promotion…';
+    const { error: err } = await sb.from('profiles').update({ is_admin: true }).eq('id', id);
+    if (err) {
+      toast('Erreur promotion : ' + err.message, true);
+      b.disabled = false;
+      b.textContent = '👑 Nommer Administrateur';
+    } else {
+      await sb.from('app_admins').upsert({ email }).catch(() => {});
+      toast(`👑 ${email} a été promu Administrateur !`);
+      renderAdminUsers();
+    }
+  }));
+
+  tb.querySelectorAll('[data-demote-user]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.dataset.demoteUser;
+    const email = b.dataset.email;
+    if (!confirm(`Retirer les privilèges administrateur de ${email} ?`)) return;
+    b.disabled = true;
+    b.textContent = 'Modification…';
+    const { error: err } = await sb.from('profiles').update({ is_admin: false }).eq('id', id);
+    if (err) {
+      toast('Erreur : ' + err.message, true);
+      b.disabled = false;
+      b.textContent = 'Rétrograder en Client';
+    } else {
+      await sb.from('app_admins').delete().eq('email', email).catch(() => {});
+      toast(`Privilèges administrateur révoqués pour ${email}.`);
+      renderAdminUsers();
+    }
+  }));
+}
+$('#adminUsersSearch')?.addEventListener('input', drawAdminUsers);
 
 // ------------------------------------------------------------------ démarrage
 $('#footContact').textContent = `${BRAND.contact} · ${BRAND.tel}`;

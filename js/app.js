@@ -156,14 +156,16 @@ async function checkPaymentReturnParams() {
             }).eq('id', state.user.id);
 
             // Tracer l'écriture dans le journal d'audit
-            await sb.from('credit_ledger').insert({
-              user_id: state.user.id,
-              montant_credits: creditsToCredit,
-              solde_apres: newBal,
-              motif: 'purchase',
-              payment_id: payRow.id,
-              commentaire: `Achat ${payRow.package_id || 'crédits'} (PayTech ${ref})`
-            }).catch(() => {});
+            try {
+              await sb.from('credit_ledger').insert({
+                user_id: state.user.id,
+                montant_credits: creditsToCredit,
+                solde_apres: newBal,
+                motif: 'purchase',
+                payment_id: payRow.id,
+                commentaire: `Achat ${payRow.package_id || 'crédits'} (PayTech ${ref})`
+              });
+            } catch (_) {}
 
             creditsAdded = creditsToCredit;
             rpcDone = true;
@@ -695,7 +697,9 @@ async function executeGeneration(mode) {
     let charged = false;
     if (state.profile?.is_admin) {
       // Privilège Super-Administrateur : génération illimitée sans décompte de crédits
-      await sb.from('exercises').update({ is_full_version: true, generation_type: 'paid' }).eq('id', d.exercise.id).catch(() => {});
+      try {
+        await sb.from('exercises').update({ is_full_version: true, generation_type: 'paid' }).eq('id', d.exercise.id);
+      } catch (_) {}
       charged = true;
     } else {
       try {
@@ -716,18 +720,22 @@ async function executeGeneration(mode) {
           }
           const newBal = cur - 1;
           await sb.from('profiles').update({ credits_balance: newBal }).eq('id', state.user.id);
-          await sb.from('credit_ledger').insert({
-            user_id: state.user.id,
-            company_id: d.exercise.company_id,
-            exercise_id: d.exercise.id,
-            montant_credits: -1,
-            solde_apres: newBal,
-            motif: 'generation_complete',
-            commentaire: 'Déblocage liasse complète DGID (mode direct)'
-          }).catch(() => {});
+          try {
+            await sb.from('credit_ledger').insert({
+              user_id: state.user.id,
+              company_id: d.exercise.company_id,
+              exercise_id: d.exercise.id,
+              montant_credits: -1,
+              solde_apres: newBal,
+              motif: 'generation_complete',
+              commentaire: 'Déblocage liasse complète DGID (mode direct)'
+            });
+          } catch (_) {}
           charged = true;
         } else if (mode === 'free') {
-          await sb.from('companies').update({ free_generation_used: true }).eq('id', d.exercise.company_id).catch(() => {});
+          try {
+            await sb.from('companies').update({ free_generation_used: true }).eq('id', d.exercise.company_id);
+          } catch (_) {}
         }
       }
     }
@@ -1364,7 +1372,9 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
 
     // Mémorise le téléphone dans le profil
     if (!state.profile?.telephone) {
-      sb.from('profiles').update({ telephone: phone }).eq('id', state.user.id).catch(() => {});
+      try {
+        await sb.from('profiles').update({ telephone: phone }).eq('id', state.user.id);
+      } catch (_) {}
     }
 
     // 2. Préparation du payload PayTech
@@ -1437,7 +1447,7 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
     if (data.is_mock) {
       if (msgEl) msgEl.textContent = 'Attribution des crédits…';
       if (payRow?.id) {
-        await sb.rpc('complete_payment', { p_payment_id: payRow.id }).catch(() => {});
+        try { await sb.rpc('complete_payment', { p_payment_id: payRow.id }); } catch (_) {}
       }
       await refreshProfile();
       closeModals();
@@ -1630,7 +1640,7 @@ async function renderAdminPayments() {
             motif: 'purchase',
             payment_id: id,
             commentaire: `Commande ${pay.reference_externe || id} validée manuellement par admin`
-          }).catch(() => {});
+          });
         }
         err = null;
       } catch (fallbackErr) {
@@ -1728,7 +1738,7 @@ $('#formAdminCredit')?.addEventListener('submit', async e => {
         solde_apres: newBal,
         motif: 'admin_adjustment',
         commentaire: motif || 'Ajustement manuel admin'
-      }).catch(() => {});
+      });
       error = null;
     } catch (fbErr) {
       error = fbErr;
@@ -1797,7 +1807,7 @@ function drawAdminUsers() {
       b.disabled = false;
       b.textContent = '👑 Nommer Administrateur';
     } else {
-      await sb.from('app_admins').upsert({ email }).catch(() => {});
+      try { await sb.from('app_admins').upsert({ email }); } catch (_) {}
       toast(`👑 ${email} a été promu Administrateur !`);
       renderAdminUsers();
     }
@@ -1815,7 +1825,7 @@ function drawAdminUsers() {
       b.disabled = false;
       b.textContent = 'Rétrograder en Client';
     } else {
-      await sb.from('app_admins').delete().eq('email', email).catch(() => {});
+      try { await sb.from('app_admins').delete().eq('email', email); } catch (_) {}
       toast(`Privilèges administrateur révoqués pour ${email}.`);
       renderAdminUsers();
     }

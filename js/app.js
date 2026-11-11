@@ -413,7 +413,12 @@ async function openDossier(id) {
 
 // ------------------------------------------------------------------ balances
 function resetBalanceUI() {
-  for (const k of ['N', 'N1']) { $('#file' + k).textContent = 'Aucun fichier'; $('#rep' + k).innerHTML = ''; }
+  for (const k of ['N', 'N1']) {
+    $('#file' + k).textContent = 'Aucun fichier';
+    $('#rep' + k).innerHTML = '';
+    const btnView = $('#btnBalView' + k);
+    if (btnView) btnView.style.display = 'none';
+  }
   $('#btnStep2').disabled = true;
 }
 $$('[data-input]').forEach(inp => inp.addEventListener('change', () => inp.files[0] && handleBalanceFile(inp.dataset.input, inp.files[0], true).finally(() => (inp.value = ''))));
@@ -460,12 +465,23 @@ async function handleBalanceFile(k, file, upload) {
 function renderBalanceReport(k, p) {
   const t = p.totals || {};
   const st = p.errors.length ? '<span class="badge bad">À corriger</span>' : p.warnings.length ? '<span class="badge warn">Lue avec remarques</span>' : '<span class="badge ok">Conforme</span>';
+  
+  // Met à jour et affiche le bouton d'édition rapide
+  const btnView = $('#btnBalView' + k);
+  if (btnView) {
+    btnView.style.display = 'inline-flex';
+    btnView.textContent = `👁️ Visualiser & Modifier (${p.rows?.length || 0} comptes)`;
+  }
+
   $('#rep' + k).innerHTML = `${st}
     <dl style="margin-top:8px"><dt>Comptes</dt><dd>${fmt(t.comptes || 0)}</dd>
     <dt>Soldes d'ouverture D / C</dt><dd>${fmt(t.sad || 0)} / ${fmt(t.sac || 0)}</dd>
     <dt>Mouvements D / C</dt><dd>${fmt(t.md || 0)} / ${fmt(t.mc || 0)}</dd></dl>
     ${p.errors.length ? `<ul class="issues err">${p.errors.slice(0, 8).map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    ${p.warnings.length ? `<details><summary class="small">${p.warnings.length} remarque(s)</summary><ul class="issues warn">${p.warnings.slice(0, 40).map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}`;
+    ${p.warnings.length ? `<details><summary class="small">${p.warnings.length} remarque(s)</summary><ul class="issues warn">${p.warnings.slice(0, 40).map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button type="button" class="btn sm outline btn-open-bal" data-bal-key="${k}">🔍 Inspecter & Corriger les ${p.rows?.length || 0} comptes</button>
+    </div>`;
 }
 $('#btnStep2').addEventListener('click', () => setStep(3));
 $('#btnTemplate').addEventListener('click', () => {
@@ -477,6 +493,423 @@ $('#btnTemplate').addEventListener('click', () => {
   ws['!cols'] = [{ wch: 10 }, { wch: 36 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
   const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'Feuil1');
   window.XLSX.writeFile(wb, 'Modele_balance_FINSMART.xlsx');
+});
+
+// ------------------------------------------------------------------ Visualiseur & Éditeur de Balance
+let currentBalKey = 'N';
+let currentBalRows = [];
+let balFilterMode = 'all';
+let balSearchQuery = '';
+let balCurrentPage = 1;
+const BAL_PAGE_SIZE = 50;
+
+function openBalanceEditor(k) {
+  currentBalKey = k || 'N';
+  const d = state.dossier;
+  const parsed = d[currentBalKey === 'N' ? 'balN' : 'balN1'];
+  const label = currentBalKey === 'N' ? 'Balance N (Exercice en cours)' : 'Balance N-1 (Exercice précédent)';
+  
+  const titleEl = $('#balModalTitleText');
+  if (titleEl) titleEl.textContent = `Visualisation & Correction de la ${label}`;
+  const subText = d.company?.nom ? `${esc(d.company.nom)} · ${d.exercise?.date_fin ? 'Clôture au ' + dateFr(d.exercise.date_fin) : ''}` : 'Contrôle des comptes et équilibre comptable';
+  const subEl = $('#balModalSub');
+  if (subEl) subEl.textContent = subText;
+
+  if (parsed && Array.isArray(parsed.rows) && parsed.rows.length) {
+    currentBalRows = parsed.rows.map((r, i) => ({
+      id: i + 1,
+      acc: String(r[0] ?? ''),
+      lib: String(r[1] ?? ''),
+      sad: Number(r[2]) || 0,
+      sac: Number(r[3]) || 0,
+      md: Number(r[4]) || 0,
+      mc: Number(r[5]) || 0,
+    }));
+  } else {
+    currentBalRows = [
+      { id: 1, acc: '101000', lib: 'Capital social', sad: 0, sac: 10000000, md: 0, mc: 0 },
+      { id: 2, acc: '521100', lib: 'Banque', sad: 10000000, sac: 0, md: 5000000, mc: 5000000 },
+    ];
+  }
+
+  balFilterMode = 'all';
+  balSearchQuery = '';
+  balCurrentPage = 1;
+  const sInput = $('#balSearchInput');
+  if (sInput) sInput.value = '';
+  const saveSt = $('#balSaveStatus');
+  if (saveSt) saveSt.textContent = 'Prêt pour modifications.';
+
+  computeBalanceLiveStats();
+  refreshBalEditorTable();
+  const modal = $('#modalBalanceEditor');
+  if (modal) modal.hidden = false;
+}
+
+function computeBalanceLiveStats() {
+  let sadTot = 0, sacTot = 0, mdTot = 0, mcTot = 0;
+  let clDebTot = 0, clCdtTot = 0;
+  let abnormalRows = 0;
+
+  currentBalRows.forEach(r => {
+    const sD = Number(r.sad) || 0;
+    const sC = Number(r.sac) || 0;
+    const mD = Number(r.md) || 0;
+    const mC = Number(r.mc) || 0;
+
+    sadTot += sD;
+    sacTot += sC;
+    mdTot += mD;
+    mcTot += mC;
+
+    const netCloture = (sD - sC) + (mD - mC);
+    if (netCloture > 0) clDebTot += netCloture;
+    else if (netCloture < 0) clCdtTot += Math.abs(netCloture);
+
+    const accStr = String(r.acc || '').trim();
+    const hasErr = !/^\d{2,}$/.test(accStr) || !String(r.lib || '').trim() || sD < 0 || sC < 0 || mD < 0 || mC < 0;
+    r.hasErr = hasErr;
+    if (hasErr) abnormalRows++;
+  });
+
+  const count = currentBalRows.length;
+  const kpiComptes = $('#balKpiComptes');
+  if (kpiComptes) kpiComptes.textContent = `${count} compte${count > 1 ? 's' : ''}`;
+  const modalBadge = $('#balModalBadge');
+  if (modalBadge) modalBadge.textContent = `${count} compte${count > 1 ? 's' : ''}`;
+
+  const kpiSadSac = $('#balKpiSadSac');
+  if (kpiSadSac) kpiSadSac.textContent = `${fmt(sadTot)} / ${fmt(sacTot)}`;
+  const kpiMdMc = $('#balKpiMdMc');
+  if (kpiMdMc) kpiMdMc.textContent = `${fmt(mdTot)} / ${fmt(mcTot)}`;
+  const kpiCloture = $('#balKpiCloture');
+  if (kpiCloture) kpiCloture.textContent = `${fmt(clDebTot)} D / ${fmt(clCdtTot)} C`;
+
+  const ecartOuv = Math.round(sadTot - sacTot);
+  const ecartMvt = Math.round(mdTot - mcTot);
+
+  const pillOuv = $('#balPillOuv');
+  if (pillOuv) {
+    if (Math.abs(ecartOuv) < 1) {
+      pillOuv.className = 'bal-kpi-pill ok';
+      pillOuv.textContent = 'Équilibré (0 FCFA)';
+    } else {
+      pillOuv.className = 'bal-kpi-pill bad';
+      pillOuv.textContent = `Écart : ${fmt(ecartOuv)} FCFA`;
+    }
+  }
+
+  const pillMvt = $('#balPillMvt');
+  if (pillMvt) {
+    if (Math.abs(ecartMvt) < 1) {
+      pillMvt.className = 'bal-kpi-pill ok';
+      pillMvt.textContent = 'Équilibré (0 FCFA)';
+    } else {
+      pillMvt.className = 'bal-kpi-pill bad';
+      pillMvt.textContent = `Écart : ${fmt(ecartMvt)} FCFA`;
+    }
+  }
+
+  const alertBox = $('#balAlertsBox');
+  if (alertBox) {
+    const issues = [];
+    if (Math.abs(ecartOuv) >= 1) {
+      issues.push(`⚠️ Soldes d'ouverture déséquilibrés : Débit – Crédit = <b>${fmt(ecartOuv)} FCFA</b>.`);
+    }
+    if (Math.abs(ecartMvt) >= 1) {
+      issues.push(`⚠️ Mouvements de période déséquilibrés : Débit – Crédit = <b>${fmt(ecartMvt)} FCFA</b>.`);
+    }
+    if (abnormalRows > 0) {
+      issues.push(`⚠️ ${abnormalRows} compte(s) avec numéro manquant ou montant négatif.`);
+    }
+
+    if (issues.length) {
+      alertBox.hidden = false;
+      alertBox.innerHTML = `<div class="status-banner bad" style="margin:0; padding:10px 14px; font-size:13px;"><div>${issues.join('<br>')}</div></div>`;
+    } else {
+      alertBox.hidden = false;
+      alertBox.innerHTML = `<div class="status-banner ok" style="margin:0; padding:8px 14px; font-size:13px;"><div>✅ <b>Balance équilibrée et conforme.</b> Prête pour le calcul officiel des liasses DGID.</div></div>`;
+    }
+  }
+}
+
+function getFilteredBalRows() {
+  let list = currentBalRows;
+  if (balSearchQuery) {
+    const q = balSearchQuery.toLowerCase();
+    list = list.filter(r => String(r.acc || '').toLowerCase().includes(q) || String(r.lib || '').toLowerCase().includes(q));
+  }
+  if (balFilterMode === 'errors') {
+    list = list.filter(r => r.hasErr);
+  }
+  return list;
+}
+
+function refreshBalEditorTable() {
+  const filtered = getFilteredBalRows();
+  const totalCount = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / BAL_PAGE_SIZE));
+  balCurrentPage = Math.min(Math.max(1, balCurrentPage), totalPages);
+
+  const start = (balCurrentPage - 1) * BAL_PAGE_SIZE;
+  const end = Math.min(start + BAL_PAGE_SIZE, totalCount);
+  const pageRows = filtered.slice(start, end);
+
+  const tbody = $('#balTableBody');
+  if (!tbody) return;
+
+  if (!pageRows.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:32px 16px; color:var(--muted);">Aucun compte ne correspond à votre recherche ou filtre.<br><button type="button" class="btn sm outline" id="btnResetBalSearch" style="margin-top:10px;">Réinitialiser les filtres</button></td></tr>`;
+    $('#btnResetBalSearch')?.addEventListener('click', () => {
+      balSearchQuery = '';
+      balFilterMode = 'all';
+      if ($('#balSearchInput')) $('#balSearchInput').value = '';
+      refreshBalEditorTable();
+    });
+  } else {
+    let rowsHtml = '';
+    pageRows.forEach((r, idx) => {
+      const sD = Number(r.sad) || 0;
+      const sC = Number(r.sac) || 0;
+      const mD = Number(r.md) || 0;
+      const mC = Number(r.mc) || 0;
+      const cloture = (sD - sC) + (mD - mC);
+      const clotureTxt = cloture > 0 ? `${fmt(cloture)} D` : (cloture < 0 ? `${fmt(Math.abs(cloture))} C` : '0');
+      const clotureColor = cloture > 0 ? '#15803d' : (cloture < 0 ? '#b45309' : 'var(--muted)');
+
+      rowsHtml += `
+        <tr data-row-id="${r.id}" class="${r.hasErr ? 'bal-row-err' : ''}">
+          <td style="text-align:center; color:var(--muted); font-size:11px;">${start + idx + 1}</td>
+          <td><input type="text" class="acc-input" data-id="${r.id}" data-col="acc" value="${esc(r.acc)}" placeholder="ex. 411100"></td>
+          <td><input type="text" class="lib-input" data-id="${r.id}" data-col="lib" value="${esc(r.lib)}" placeholder="Intitulé du compte"></td>
+          <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="sad" value="${r.sad !== 0 && r.sad !== null && r.sad !== undefined ? r.sad : ''}" placeholder="0"></td>
+          <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="sac" value="${r.sac !== 0 && r.sac !== null && r.sac !== undefined ? r.sac : ''}" placeholder="0"></td>
+          <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="md" value="${r.md !== 0 && r.md !== null && r.md !== undefined ? r.md : ''}" placeholder="0"></td>
+          <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="mc" value="${r.mc !== 0 && r.mc !== null && r.mc !== undefined ? r.mc : ''}" placeholder="0"></td>
+          <td class="th-num" id="cloture-${r.id}" style="font-weight:700; color:${clotureColor};">${clotureTxt}</td>
+          <td style="text-align:center;"><button type="button" class="btn-del-row" data-del-id="${r.id}" title="Supprimer ce compte">🗑️</button></td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = rowsHtml;
+  }
+
+  // Mise à jour de la pagination
+  const pInfo = $('#balPaginationInfo');
+  if (pInfo) {
+    pInfo.textContent = totalCount ? `Affichage de ${start + 1} à ${end} sur ${totalCount} compte(s)${balSearchQuery ? ' (résultats filtrés)' : ''}` : '0 compte';
+  }
+  const pDisplay = $('#balPageDisplay');
+  if (pDisplay) pDisplay.textContent = `Page ${balCurrentPage} / ${totalPages}`;
+  const btnPrev = $('#btnBalPrevPage');
+  if (btnPrev) btnPrev.disabled = (balCurrentPage <= 1);
+  const btnNext = $('#btnBalNextPage');
+  if (btnNext) btnNext.disabled = (balCurrentPage >= totalPages);
+}
+
+// Écouteur global pour la table d'édition de la balance
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (!el.closest('#balTableBody')) return;
+
+  const rowId = Number(el.dataset.id);
+  const col = el.dataset.col;
+  if (!rowId || !col) return;
+
+  const row = currentBalRows.find(r => r.id === rowId);
+  if (!row) return;
+
+  if (col === 'acc' || col === 'lib') {
+    row[col] = el.value;
+  } else {
+    row[col] = el.value === '' ? 0 : Number(el.value);
+  }
+
+  // Recalcul en direct du solde net de la ligne
+  const sD = Number(row.sad) || 0;
+  const sC = Number(row.sac) || 0;
+  const mD = Number(row.md) || 0;
+  const mC = Number(row.mc) || 0;
+  const cloture = (sD - sC) + (mD - mC);
+  const cell = document.getElementById(`cloture-${row.id}`);
+  if (cell) {
+    cell.textContent = cloture > 0 ? `${fmt(cloture)} D` : (cloture < 0 ? `${fmt(Math.abs(cloture))} C` : '0');
+    cell.style.color = cloture > 0 ? '#15803d' : (cloture < 0 ? '#b45309' : 'var(--muted)');
+  }
+
+  computeBalanceLiveStats();
+  const st = $('#balSaveStatus');
+  if (st) st.textContent = '⚠️ Modifications non enregistrées…';
+});
+
+// Écouteur global de suppression de ligne
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-del-id]');
+  if (!btn) return;
+  const id = Number(btn.dataset.delId);
+  if (!id) return;
+
+  currentBalRows = currentBalRows.filter(r => r.id !== id);
+  computeBalanceLiveStats();
+  refreshBalEditorTable();
+  const st = $('#balSaveStatus');
+  if (st) st.textContent = '⚠️ Ligne supprimée (non enregistrée)…';
+});
+
+// Ajout d'une nouvelle ligne
+$('#btnAddBalRow')?.addEventListener('click', () => {
+  const newId = Date.now();
+  currentBalRows.unshift({
+    id: newId,
+    acc: '',
+    lib: '',
+    sad: 0,
+    sac: 0,
+    md: 0,
+    mc: 0
+  });
+  balCurrentPage = 1;
+  computeBalanceLiveStats();
+  refreshBalEditorTable();
+  const st = $('#balSaveStatus');
+  if (st) st.textContent = '⚠️ Nouveau compte ajouté…';
+  setTimeout(() => {
+    const firstAccInput = document.querySelector(`input[data-id="${newId}"][data-col="acc"]`);
+    if (firstAccInput) firstAccInput.focus();
+  }, 100);
+});
+
+// Recherche
+$('#balSearchInput')?.addEventListener('input', e => {
+  balSearchQuery = e.target.value.trim();
+  balCurrentPage = 1;
+  refreshBalEditorTable();
+});
+
+// Filtres
+$('#btnFilterErrors')?.addEventListener('click', () => {
+  balFilterMode = 'errors';
+  balCurrentPage = 1;
+  refreshBalEditorTable();
+});
+$('#btnFilterAll')?.addEventListener('click', () => {
+  balFilterMode = 'all';
+  balCurrentPage = 1;
+  refreshBalEditorTable();
+});
+
+// Navigation pagination
+$('#btnBalPrevPage')?.addEventListener('click', () => {
+  if (balCurrentPage > 1) {
+    balCurrentPage--;
+    refreshBalEditorTable();
+  }
+});
+$('#btnBalNextPage')?.addEventListener('click', () => {
+  balCurrentPage++;
+  refreshBalEditorTable();
+});
+
+// Export Excel
+$('#btnExportBalXlsx')?.addEventListener('click', () => {
+  const aoa = [
+    ['Compte', 'Intitulé', 'Solde ant Dbt', 'Solde ant Cdt', 'Débit période', 'Crédit période'],
+    ...currentBalRows.map(r => [
+      Number(r.acc) || r.acc,
+      r.lib,
+      r.sad || null,
+      r.sac || null,
+      r.md || null,
+      r.mc || null
+    ])
+  ];
+  const ws = window.XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 10 }, { wch: 36 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Balance');
+  const filename = `Balance_${currentBalKey}_corrigee.xlsx`;
+  window.XLSX.writeFile(wb, filename);
+  toast(`Fichier ${filename} exporté.`);
+});
+
+// Enregistrement des modifications de la balance
+$('#btnSaveBalanceEdits')?.addEventListener('click', async () => {
+  const d = state.dossier;
+  const k = currentBalKey;
+  const label = k === 'N' ? 'Balance N' : 'Balance N-1';
+
+  // Validation et normalisation
+  const aoa = [
+    ['Compte', 'Intitulé', 'Solde ant Dbt', 'Solde ant Cdt', 'Débit période', 'Crédit période'],
+    ...currentBalRows.map(r => [
+      Number(r.acc) || r.acc,
+      r.lib,
+      r.sad || null,
+      r.sac || null,
+      r.md || null,
+      r.mc || null
+    ])
+  ];
+
+  const parsed = parseBalance(aoa, label);
+  parsed.ok = !parsed.errors.length;
+  d[k === 'N' ? 'balN' : 'balN1'] = parsed;
+
+  renderBalanceReport(k, parsed);
+  $('#file' + k).textContent = `Balance_${k}_corrigee.xlsx (${parsed.rows.length} comptes)`;
+  $('#btnStep2').disabled = !(d.balN?.ok && d.balN1?.ok);
+
+  // Sauvegarde dans Supabase Storage si un exercice est lié
+  if (d.exercise) {
+    try {
+      const ws = window.XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{ wch: 10 }, { wch: 36 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+      const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, 'Balance');
+      const outBytes = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const newFile = new File([outBytes], `balance_${k === 'N' ? 'n' : 'n1'}_corrigee.xlsx`, {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+
+      const path = `${d.exercise.company_id}/${d.exercise.id}/balance_${k === 'N' ? 'n' : 'n1'}.xlsx`;
+      const type = k === 'N' ? 'balance_n' : 'balance_n1';
+      await sb.storage.from('balances').upload(path, newFile, { upsert: true, contentType: newFile.type });
+      await sb.from('exercise_files').delete().eq('exercise_id', d.exercise.id).eq('type', type);
+      await sb.from('exercise_files').insert({
+        exercise_id: d.exercise.id,
+        type,
+        storage_path: path,
+        nom_original: newFile.name,
+        taille_octets: newFile.size,
+        mime_type: newFile.type
+      });
+
+      if (k === 'N') {
+        const t = parsed.totals;
+        await sb.from('exercises').update({
+          nb_comptes: t.comptes || 0,
+          total_debit: Math.round((t.sad || 0) + (t.md || 0)),
+          total_credit: Math.round((t.sac || 0) + (t.mc || 0)),
+          balance_equilibree: parsed.ok,
+          ecart_balance: Math.round(((t.sad || 0) + (t.md || 0)) - ((t.sac || 0) + (t.mc || 0)))
+        }).eq('id', d.exercise.id);
+      }
+    } catch (saveErr) {
+      console.warn('Erreur sauvegarde balance dans Supabase:', saveErr);
+    }
+  }
+
+  $('#modalBalanceEditor').hidden = true;
+  toast(`✅ ${label} enregistrée avec succès (${parsed.rows.length} comptes) !`);
+});
+
+// Écouteur d'ouverture du visualiseur
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.btn-open-bal, [data-open-editor]');
+  if (!btn) return;
+  e.preventDefault();
+  const k = btn.dataset.balKey || btn.dataset.openEditor || 'N';
+  openBalanceEditor(k);
 });
 
 // ------------------------------------------------------------------ informations complémentaires
@@ -556,6 +989,8 @@ function compute(payload) {
 function closeModals() {
   $('#modalPreGen').hidden = true;
   $('#modalPayment').hidden = true;
+  const mb = $('#modalBalanceEditor');
+  if (mb) mb.hidden = true;
 }
 $$('[data-close-modal]').forEach(b => b.addEventListener('click', closeModals));
 $('.modal-overlay')?.addEventListener('click', e => { if (e.target.classList.contains('modal-overlay')) closeModals(); });

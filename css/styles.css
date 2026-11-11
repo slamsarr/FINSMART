@@ -229,3 +229,160 @@ details .inner { padding: 4px 16px 16px; }
 .table tr.tr-vigilance-err td:first-child { border-left: 4px solid #f59e0b; }
 .ctl-guide-note { font-size: 11.5px; color: #7f1d1d; background: #fee2e2; border-radius: 4px; padding: 4px 8px; margin-top: 4px; line-height: 1.4; }
 
+/* ==================== VISUALISEUR & ÉDITEUR DE BALANCE ==================== */
+.modal-box.modal-xl {
+  max-width: 1250px;
+  width: 96vw;
+  max-height: 94vh;
+}
+
+.bal-kpi-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+.bal-kpi-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bal-kpi-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: .03em;
+}
+.bal-kpi-val {
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.bal-kpi-pill {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 800;
+}
+.bal-kpi-pill.ok { background: #dcfce7; color: #15803d; }
+.bal-kpi-pill.bad { background: #fee2e2; color: #b91c1c; }
+
+.bal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.bal-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.bal-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bal-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  max-height: 52vh;
+  background: #ffffff;
+  position: relative;
+}
+.bal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.bal-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f1f5f3;
+  z-index: 2;
+  border-bottom: 2px solid var(--line);
+  padding: 8px 6px;
+  text-align: left;
+  font-weight: 700;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.bal-table thead th.th-num {
+  text-align: right;
+}
+.bal-table tbody td {
+  padding: 4px 6px;
+  border-top: 1px solid var(--line-2);
+  vertical-align: middle;
+}
+.bal-table tbody tr:hover {
+  background: #f9fbf9;
+}
+.bal-table tr.bal-row-err td {
+  background: #fff5f5 !important;
+}
+.bal-table input {
+  padding: 5px 7px;
+  font-size: 12.5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  background: #fff;
+  transition: border-color .15s, box-shadow .15s;
+}
+.bal-table input:focus {
+  border-color: var(--brand);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(18, 58, 50, .15);
+  background: #fff;
+}
+.bal-table input.num-input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.bal-table input.acc-input {
+  font-weight: 700;
+  color: var(--brand);
+}
+.bal-table .btn-del-row {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 14px;
+  border-radius: 4px;
+  transition: background .15s;
+}
+.bal-table .btn-del-row:hover {
+  background: #fee2e2;
+}
+.bal-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 4px 0;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+

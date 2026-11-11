@@ -121,15 +121,26 @@
           <div class="drop" data-bal="N">
             <p class="drop-title">Balance N</p>
             <p class="drop-file" id="fileN">Aucun fichier</p>
-            <label class="btn ghost sm">Choisir un fichier<input type="file" accept=".xlsx,.xls,.csv" data-input="N" hidden></label>
+            <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
+              <label class="btn ghost sm">Choisir un fichier<input type="file" accept=".xlsx,.xls,.csv" data-input="N" hidden></label>
+              <button type="button" class="btn sm primary btn-open-bal" data-bal-key="N" id="btnBalViewN" style="display:none;">👁️ Visualiser & Modifier</button>
+            </div>
             <div class="bal-report" id="repN"></div>
           </div>
           <div class="drop" data-bal="N1">
             <p class="drop-title">Balance N-1</p>
             <p class="drop-file" id="fileN1">Aucun fichier</p>
-            <label class="btn ghost sm">Choisir un fichier<input type="file" accept=".xlsx,.xls,.csv" data-input="N1" hidden></label>
+            <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
+              <label class="btn ghost sm">Choisir un fichier<input type="file" accept=".xlsx,.xls,.csv" data-input="N1" hidden></label>
+              <button type="button" class="btn sm primary btn-open-bal" data-bal-key="N1" id="btnBalViewN1" style="display:none;">👁️ Visualiser & Modifier</button>
+            </div>
             <div class="bal-report" id="repN1"></div>
           </div>
+        </div>
+        <div style="text-align:center; margin-top:14px;">
+          <span class="muted small">Besoin d'examiner, saisir ou corriger une balance sans fichier ? </span>
+          <button type="button" class="link small btn-open-bal" data-bal-key="N">✏️ Ouvrir l'éditeur Balance N</button> · 
+          <button type="button" class="link small btn-open-bal" data-bal-key="N1">✏️ Ouvrir l'éditeur Balance N-1</button>
         </div>
         <div class="actions"><button class="btn ghost" data-step-go="1">Retour</button><button class="btn primary" id="btnStep2" disabled>Continuer</button></div>
       </div>
@@ -360,6 +371,106 @@
   </div>
 </div>
 
+<!-- ======================= MODALE VISUALISEUR & ÉDITEUR DE BALANCE ======================= -->
+<div class="modal-overlay" id="modalBalanceEditor" hidden>
+  <div class="modal-box modal-xl">
+    <div class="modal-head">
+      <div>
+        <h2 id="balModalTitle" style="display:flex; align-items:center; gap:8px;">
+          <span id="balModalTitleText">Visualisation & Correction de la Balance</span>
+          <span class="badge neutral" id="balModalBadge">0 compte</span>
+        </h2>
+        <div class="muted small" id="balModalSub">Examinez les comptes importés, modifiez les montants, ajoutez des lignes et corrigez les éventuels déséquilibres.</div>
+      </div>
+      <button class="modal-close" data-close-modal>&times;</button>
+    </div>
+
+    <div class="modal-body" style="padding:16px 20px;">
+      <!-- Bandeau d'équilibre en direct -->
+      <div class="bal-kpi-bar" id="balKpiBar">
+        <div class="bal-kpi-item">
+          <div class="bal-kpi-label">Nombre de comptes</div>
+          <div class="bal-kpi-val" id="balKpiComptes">0 compte</div>
+        </div>
+        <div class="bal-kpi-item">
+          <div class="bal-kpi-label">Soldes d'ouverture (Débit / Crédit)</div>
+          <div class="bal-kpi-val">
+            <span id="balKpiSadSac">0 / 0</span>
+            <span class="bal-kpi-pill ok" id="balPillOuv">Équilibré</span>
+          </div>
+        </div>
+        <div class="bal-kpi-item">
+          <div class="bal-kpi-label">Mouvements période (Débit / Crédit)</div>
+          <div class="bal-kpi-val">
+            <span id="balKpiMdMc">0 / 0</span>
+            <span class="bal-kpi-pill ok" id="balPillMvt">Équilibré</span>
+          </div>
+        </div>
+        <div class="bal-kpi-item">
+          <div class="bal-kpi-label">Soldes nets de clôture calculés</div>
+          <div class="bal-kpi-val" id="balKpiCloture">0 D / 0 C</div>
+        </div>
+      </div>
+
+      <!-- Messages d'erreurs ou alertes d'équilibre -->
+      <div id="balAlertsBox" style="margin-bottom:12px;" hidden></div>
+
+      <!-- Barre d'outils (recherche, filtres, ajout, export) -->
+      <div class="bal-toolbar">
+        <div class="bal-toolbar-left">
+          <input type="search" class="search" id="balSearchInput" placeholder="🔍 Rechercher par n° de compte ou libellé…" style="min-width:280px;">
+          <button type="button" class="btn sm ghost" id="btnFilterErrors" title="Afficher uniquement les comptes anormaux">⚠️ Comptes anormaux</button>
+          <button type="button" class="btn sm ghost" id="btnFilterAll" style="font-weight:700;">Tous les comptes</button>
+        </div>
+        <div class="bal-toolbar-right">
+          <button type="button" class="btn sm primary" id="btnAddBalRow">➕ Ajouter un compte</button>
+          <button type="button" class="btn sm outline" id="btnExportBalXlsx">📥 Exporter en Excel (.xlsx)</button>
+        </div>
+      </div>
+
+      <!-- Tableau interactif des comptes -->
+      <div class="bal-table-wrap">
+        <table class="bal-table" id="balEditTable">
+          <thead>
+            <tr>
+              <th style="width:38px; text-align:center;">#</th>
+              <th style="width:115px;">N° Compte *</th>
+              <th>Intitulé du compte *</th>
+              <th class="th-num" style="width:130px;">Solde Ant. Dbt</th>
+              <th class="th-num" style="width:130px;">Solde Ant. Cdt</th>
+              <th class="th-num" style="width:130px;">Mvt Débit</th>
+              <th class="th-num" style="width:130px;">Mvt Crédit</th>
+              <th class="th-num" style="width:130px;">Solde Clôture</th>
+              <th style="width:40px; text-align:center;"></th>
+            </tr>
+          </thead>
+          <tbody id="balTableBody">
+            <!-- Rendu dynamique par JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="bal-pagination" id="balPagination">
+        <div id="balPaginationInfo">Affichage de 0 à 0 sur 0 compte</div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button type="button" class="btn sm ghost" id="btnBalPrevPage">◀ Précédent</button>
+          <span id="balPageDisplay" style="font-weight:700; margin:0 4px;">Page 1 / 1</span>
+          <button type="button" class="btn sm ghost" id="btnBalNextPage">Suivant ▶</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot" style="justify-content:space-between; align-items:center;">
+      <div id="balSaveStatus" class="small muted">Toutes les modifications sont recalculées en temps réel.</div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn ghost" data-close-modal>Fermer</button>
+        <button class="btn primary" id="btnSaveBalanceEdits">💾 Enregistrer les corrections</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -368,6 +479,6 @@
 <script src="vendor/supabase.js"></script>
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
-<script type="module" src="js/app.js?v=20261111_02"></script>
+<script type="module" src="js/app.js?v=20261111_03"></script>
 </body>
 </html>

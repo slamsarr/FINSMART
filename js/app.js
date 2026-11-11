@@ -1674,117 +1674,210 @@ const CONTROLS_DIAGNOSTIC = {
   A1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    norme: 'SYSCOHADA AUDCIF Art. 34 (Équilibre du Bilan d\'Ouverture)',
-    cause: 'Le total des débits d\'ouverture n\'est pas égal au total des crédits d\'ouverture (déséquilibre au 01/01). Selon l\'Art. 34 AUDCIF, le bilan d\'ouverture doit être rigoureusement équilibré.',
-    solution: 'Vérifiez le journal des à-nouveaux dans votre logiciel comptable pour équilibrer les débits et crédits d\'ouverture, ou corrigez directement via l\'éditeur de balance à l\'Étape 2.',
-    actionLabel: 'Corriger la Balance N (Étape 2)',
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Principe de Clôture et Réouverture des Comptes)',
+    explication: 'Le total des débits au 01/01/N n\'est pas égal au total des crédits au 01/01/N. En SYSCOHADA, le bilan d\'ouverture doit être rigoureusement équilibré au premier jour de l\'exercice comptable.',
+    causesFrequentes: 'Oubli de l\'écriture d\'affectation du résultat antérieur (compte 13), report à-nouveau déséquilibré généré par votre logiciel comptable, ou solde résiduel sur un compte d\'attente (471).',
+    commentRegler: [
+      'Cliquez sur le bouton doré ci-dessous <strong>« ✏️ Corriger la Balance N »</strong> pour ouvrir le visualiseur interactif.',
+      'Dans l\'éditeur, observez l\'indicateur d\'écart d\'ouverture en rouge dans le bandeau supérieur.',
+      'Pour équilibrer, ajustez le solde d\'ouverture du compte <strong>120000</strong> (Report à nouveau créditeur si Débits > Crédits) ou <strong>129000</strong> (Report à nouveau débiteur si Crédits > Débits) ou du compte <strong>130100/130900</strong>.',
+      'Cliquez sur <strong>« 💾 Enregistrer les corrections »</strong> en bas à droite pour actualiser automatiquement les états.'
+    ],
+    ecritureConseillee: 'Équilibre requis : Total Débit 01/01 = Total Crédit 01/01 (Écart requis = 0 FCFA)',
+    actionLabel: 'Corriger l\'ouverture de la Balance N (Étape 2)',
     hasAnomalies: false,
   },
   A2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA AUDCIF Art. 17 (Principe Fondamental de la Partie Double)',
-    cause: 'Le total des mouvements débits de la période est différent du total des mouvements crédits. En SYSCOHADA révisé (Art. 17), tout débit exige obligatoirement une contrepartie exacte au crédit.',
-    solution: 'Votre balance générale comporte des écritures déséquilibrées. Corrigez-les dans l\'éditeur interactif ou rechargez la balance à l\'étape 2.',
-    actionLabel: 'Examiner & Corriger la Balance N (Étape 2)',
+    explication: 'Le total des mouvements débits de la période est différent du total des mouvements crédits. Chaque opération comptable enregistrée doit comporter une contrepartie exacte.',
+    causesFrequentes: 'Une ou plusieurs écritures ont été saisies unilatéralement dans votre logiciel (ex. OD de paie, dotation aux amortissements sans contrepartie, ou importation Excel tronquée).',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Rééquilibrer les mouvements (Étape 2) »</strong>.',
+      'L\'éditeur s\'ouvre : vérifiez les totaux de la barre KPI (Total Mouvements Débit vs Total Mouvements Crédit).',
+      'Identifiez le compte dont le mouvement n\'a pas de contrepartie équivalente.',
+      'Ajustez le débit ou le crédit sur le compte de contrepartie correspondant (ex. compte 521 Banque ou 401 Fournisseurs) pour annuler l\'écart.',
+      'Enregistrez les modifications.'
+    ],
+    ecritureConseillee: 'Règle stricte AUDCIF : Somme(Mouvements Débit) = Somme(Mouvements Crédit)',
+    actionLabel: 'Rééquilibrer les mouvements (Étape 2)',
     hasAnomalies: false,
   },
   A3: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    norme: 'SYSCOHADA AUDCIF Art. 34 (Équilibre Bilanciel de Clôture)',
-    cause: 'La somme algébrique des soldes nets de clôture n\'est pas nulle (Total Débits clôture ≠ Total Crédits clôture).',
-    solution: 'La balance de clôture est déséquilibrée. Vérifiez vos cumuls et corrigez les soldes dans l\'éditeur interactif à l\'étape 2.',
-    actionLabel: 'Corriger la Balance N (Étape 2)',
+    norme: 'SYSCOHADA AUDCIF Art. 34 & 37 (Équilibre Bilanciel des Soldes de Clôture)',
+    explication: 'La somme de tous les soldes nets débiteurs ne correspond pas à la somme de tous les soldes nets créditeurs au 31/12/N.',
+    causesFrequentes: 'Déséquilibre d\'ouverture (A1) ou de mouvements (A2) qui se répercute sur les soldes finaux, ou formule de calcul de solde altérée dans le fichier source.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Corriger la Balance N (Étape 2) »</strong>.',
+      'Réglez en priorité les déséquilibres d\'ouverture (colonnes Solde Ant) ou de mouvements.',
+      'L\'éditeur recalcule les soldes de clôture en temps réel selon la formule officielle : (Solde Ant Dbt - Solde Ant Cdt) + (Mvt Débit - Mvt Crédit).',
+      'Vérifiez que le badge d\'écart affiche 0 FCFA puis cliquez sur Enregistrer.'
+    ],
+    ecritureConseillee: 'Solde Net Clôture Débiteur = Solde Net Clôture Créditeur',
+    actionLabel: 'Corriger la clôture de la Balance N (Étape 2)',
     hasAnomalies: false,
   },
   B1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    norme: 'SYSCOHADA Révisé (Nomenclature Officielle des Comptes)',
-    cause: 'Présence de comptes obsolètes de l\'ancien plan comptable ou supprimés dans le SYSCOHADA Révisé (ex. racines 20 Frais d\'établissement, 74, 76, classe 9 analytique).',
-    solution: 'Reclassez ces comptes vers les racines SYSCOHADA Révisé autorisées (ex. racine 20 en charges classe 6 ; 74/76 reclassés en 70/75/77). Consultez le tableau des comptes signalés ci-dessous pour les identifier.',
-    actionLabel: 'Voir les comptes & corriger à l\'Étape 2',
+    norme: 'SYSCOHADA Révisé (Nomenclature Officielle des Comptes - PCG OHADA)',
+    explication: 'Présence de numéros de comptes obsolètes ou formellement interdits dans le SYSCOHADA Révisé (notamment racine 20 « Frais d\'établissement », racines 74, 76 ou comptes analytiques classe 9).',
+    causesFrequentes: 'Utilisation d\'un ancien paramétrage comptable pré-2017 ou maintien de frais d\'établissement à l\'actif du bilan.',
+    commentRegler: [
+      'Cliquez ci-dessous sur <strong>« 🔍 Voir les comptes signalés »</strong> pour afficher la liste exacte des comptes proscrits.',
+      'Pour chaque compte interdit, cliquez sur <strong>« ✏️ Corriger ce compte »</strong> :',
+      '<strong>Pour la racine 20 (Frais d\'établissement) :</strong> Transférez le solde brut en charges d\'exploitation au compte <strong>631100</strong> (Frais de constitution) ou <strong>631800</strong>, et annulez le compte d\'amortissement <strong>280</strong> correspondant.',
+      '<strong>Pour les comptes 74 ou 76 :</strong> Reclassez-les vers les comptes autorisés <strong>70</strong> (Ventes/Prestations), <strong>75</strong> (Autres produits) ou <strong>77</strong> (Produits financiers).',
+      'Supprimez ou mettez à zéro les lignes des anciens comptes 20, 74, 76 dans l\'éditeur, puis enregistrez.'
+    ],
+    ecritureConseillee: 'Reclassement racine 20 : Débit 631100 (Frais de constitution) / Crédit 201100 ; Débit 280100 / Crédit 631100',
+    actionLabel: 'Reclasser les comptes interdits (Étape 2)',
     hasAnomalies: true,
   },
   B2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    norme: 'SYSCOHADA DGID (Table Officielle de Correspondance Sen-etafi)',
-    cause: 'Des comptes à 6 chiffres ne figurent pas dans la table de correspondance officielle DGID.',
-    solution: 'Vérifiez les numéros de comptes signalés dans la liste ci-dessous et alignez-les sur le plan de comptes officiel.',
-    actionLabel: 'Voir les comptes non classés',
+    norme: 'DGID Sénégal (Table Officielle de Correspondance Sen-etafi)',
+    explication: 'Des comptes à 6 chiffres présents dans votre balance ne figurent pas dans la nomenclature officielle paramétrée par la Direction Générale des Impôts et des Domaines (DGID).',
+    causesFrequentes: 'Création de sous-comptes personnalisés avec des racines non homologuées, ou longueur de compte différente de 6 chiffres.',
+    commentRegler: [
+      'Consultez la table des comptes signalés ci-dessous marqués <em>« [SYSCOHADA / DGID] Compte non classé »</em>.',
+      'Cliquez sur <strong>« ✏️ Corriger ce compte »</strong> en face de chaque compte non classé.',
+      'Dans l\'éditeur, modifiez le numéro de compte pour le rattacher à la racine officielle SYSCOHADA la plus proche à 6 chiffres (ex. remplacer 411999 par 411100 Clients ordinaires, 401999 par 401100 Fournisseurs ordinaires).',
+      'Enregistrez les corrections pour que Sen-etafi reconnaisse l\'ensemble des postes.'
+    ],
+    ecritureConseillee: 'Chaque compte doit comporter 6 chiffres et débuter par une racine reconnue du plan OHADA (classes 1 à 8)',
+    actionLabel: 'Harmoniser les comptes avec la table DGID',
     hasAnomalies: true,
   },
   B4: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    norme: 'SYSCOHADA (Règle d\'Apurement des Comptes de Gestion)',
-    cause: 'Des comptes de gestion (charges classe 6, produits classe 7 ou 8) comportent un solde d\'ouverture au 01/01. En SYSCOHADA, les comptes de résultat doivent être obligatoirement soldés à l\'ouverture.',
-    solution: 'En normes SYSCOHADA, mettez à zéro les soldes d\'ouverture des classes 6, 7 et 8 dans la balance N via l\'éditeur interactif.',
-    actionLabel: 'Mettre à zéro l\'ouverture des classes 6/7/8 (Étape 2)',
+    norme: 'SYSCOHADA (Principe de Séparation des Exercices & Apurement des Produits et Charges)',
+    explication: 'Des comptes de résultat (charges classe 6, produits classe 7 ou 8) comportent un solde d\'ouverture au 01/01. En SYSCOHADA, les comptes de gestion doivent obligatoirement démarrer à zéro à chaque nouvel exercice.',
+    causesFrequentes: 'Votre logiciel comptable a généré les à-nouveaux sans apurer les comptes de gestion de l\'exercice précédent.',
+    commentRegler: [
+      'Cliquez sur le bouton doré <strong>« ✏️ Mettre à zéro l\'ouverture des classes 6/7/8 »</strong>.',
+      'L\'éditeur interactif s\'ouvre, automatiquement filtré sur les classes de gestion.',
+      'Pour chaque ligne de classe 6, 7 et 8 : saisissez <strong>0</strong> dans les colonnes <em>Solde Ant Dbt</em> et <em>Solde Ant Cdt</em>.',
+      'Reportez le solde net total vers le compte <strong>120000</strong> (Report à nouveau créditeur) ou <strong>129000</strong> (Report à nouveau débiteur) au 01/01 pour maintenir l\'équilibre.',
+      'Cliquez sur <strong>« 💾 Enregistrer les corrections »</strong>.'
+    ],
+    ecritureConseillee: 'Règle stricte : Soldes d\'ouverture Débit et Crédit = 0 FCFA pour tous les comptes débutant par 6, 7 ou 8',
+    actionLabel: 'Mettre à zéro l\'ouverture des classes 6/7/8',
     hasAnomalies: true,
   },
   C1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA AUDCIF Art. 30 à 33 (Concordance du Résultat Net)',
-    cause: 'Le résultat net dégagé par la balance (Produits - Charges) est différent du résultat net calculé au Compte de Résultat.',
-    solution: 'Vérifiez la concordance de vos comptes de charges et produits ainsi que les écritures d\'inventaire.',
-    actionLabel: 'Vérifier la balance (Étape 2)',
+    explication: 'Le résultat net de la période calculé à partir de la balance générale (Total Produits classe 7/8 - Total Charges classe 6/8) ne concorde pas avec le résultat net calculé au Compte de Résultat officiel (poste CK).',
+    causesFrequentes: 'Un compte de charge ou de produit n\'a pas été rattaché à une rubrique officielle, écriture d\'impôt sur les sociétés (891) saisie de façon asymétrique, ou omission d\'un sous-compte HAO.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier la concordance de résultat »</strong>.',
+      'Vérifiez dans la balance que tous les comptes de produits (70 à 79) et charges (60 à 69) ont bien un solde conforme.',
+      'Vérifiez le compte <strong>891000 Impôts sur les bénéfices</strong> : son montant doit être rigoureusement égal à la ligne d\'impôt du compte de résultat.',
+      'Assurez-vous qu\'aucun compte de produit ou de charge n\'a été omis de la balance générale.'
+    ],
+    ecritureConseillee: 'Résultat Balance = Somme(Produits) - Somme(Charges) = Résultat Net Compte de Résultat (Poste CK)',
+    actionLabel: 'Vérifier la concordance de résultat (Étape 2)',
     hasAnomalies: false,
   },
   C2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA AUDCIF Art. 34 (Égalité Fondamentale Actif = Passif)',
-    cause: 'Le total de l\'Actif du Bilan n\'est pas égal au total du Passif (Bilan déséquilibré).',
-    solution: 'Vérifiez que le résultat net de l\'exercice est correctement rattaché aux capitaux propres (compte 13) au passif et que les amortissements/dépréciations sont bien au crédit.',
-    actionLabel: 'Vérifier les comptes de bilan (Étape 2)',
+    explication: 'Le total de l\'Actif net du bilan n\'est pas égal au total du Passif (Capitaux Propres + Dettes). Le bilan est déséquilibré.',
+    causesFrequentes: 'Le résultat net de l\'exercice n\'a pas été rattaché au compte 131 (bénéfice) ou 139 (perte) dans les capitaux propres, ou des comptes soustractifs d\'actif (28 Amortissements, 29/39/49 Dépréciations) ont été saisis au débit.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier les comptes de bilan »</strong>.',
+      'Vérifiez que le résultat de l\'exercice est bien intégré dans la balance au compte <strong>131100</strong> (si bénéfice) ou <strong>139100</strong> (si perte).',
+      'Assurez-vous que tous les amortissements (comptes 28x) ont un solde créditeur ou nul (jamais débiteur).',
+      'Contrôlez que les capitaux propres (classe 1) et les dettes (classes 16 et 4) s\'additionnent exactement au total de l\'actif net.',
+      'Enregistrez les corrections.'
+    ],
+    ecritureConseillee: 'Affectation au bilan : Résultat de l\'exercice au compte 131100 (au crédit) ou 139100 (au débit avec signe négatif)',
+    actionLabel: 'Vérifier l\'équilibre Bilan Actif / Passif',
     hasAnomalies: false,
   },
   C3: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    norme: 'SYSCOHADA (Rapprochement Tableau des Flux de Trésorerie TFT)',
-    cause: 'La variation de trésorerie issue du Tableau des Flux (TFT) ne correspond pas à la trésorerie nette au Bilan (52 Banque + 57 Caisse - 56 Découverts).',
-    solution: 'Vérifiez les variations des comptes de disponibilités (52 Banque, 57 Caisse) et de concours bancaires (56 Découverts).',
-    actionLabel: 'Vérifier la trésorerie (Étape 2)',
+    norme: 'SYSCOHADA (Cohérence du Tableau des Flux de Trésorerie TFT)',
+    explication: 'La variation de trésorerie nette issue du Tableau des Flux (TFT - poste ZF) est différente de la variation réelle des disponibilités entre l\'ouverture et la clôture au Bilan.',
+    causesFrequentes: 'Incohérence sur les comptes de trésorerie (52 Banque, 57 Caisse), ou confusion entre découverts bancaires à court terme (561) et emprunts financiers (16).',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier la trésorerie »</strong>.',
+      'Contrôlez vos comptes de disponibilités : 521 Banque et 571 Caisse.',
+      'Vérifiez que la caisse (57) ne présente aucun solde créditeur (strictement interdit en SYSCOHADA).',
+      'Vérifiez que les crédits de trésorerie bancaire sont bien comptabilisés au compte <strong>561000 Crédits de trésorerie</strong> et non en déduction de l\'actif.'
+    ],
+    ecritureConseillee: 'Trésorerie Nette = (Disponibilités Actif 52 + 57) - (Trésorerie Passif 561 Découverts)',
+    actionLabel: 'Vérifier les comptes de trésorerie (Étape 2)',
     hasAnomalies: false,
   },
   C4: {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA (Cascade des Soldes Intermédiaires de Gestion SIG)',
-    cause: 'Incohérence dans les cumuls des soldes intermédiaires de gestion du Compte de Résultat (Marge, Valeur Ajoutée, EBE, Résultat d\'Exploitation).',
-    solution: 'Vérifiez les totaux de la cascade de résultat (Marge brute, Valeur Ajoutée, EBE, Résultat d\'Exploitation).',
-    actionLabel: 'Vérifier le compte de résultat',
+    explication: 'Incohérence arithmétique dans les cumuls des soldes intermédiaires de gestion du Compte de Résultat (Marge Brute, Valeur Ajoutée, EBE, Résultat d\'Exploitation).',
+    causesFrequentes: 'Modification manuelle d\'un sous-total ou cellule de charges externes (62, 63) mal positionnée.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier le compte de résultat »</strong>.',
+      'Contrôlez la séquence des SIG : Marge Brute -> Valeur Ajoutée (+ Autres Produits - Charges externes 61/62/63) -> EBE (- Charges personnel 66) -> Résultat d\'exploitation (+ Reprises - Dotations 68).',
+      'Assurez-vous qu\'aucune charge d\'exploitation n\'a été omise.'
+    ],
+    ecritureConseillee: 'Cascade SIG : Marge Brute -> Valeur Ajoutée -> EBE -> Résultat d\'Exploitation -> Résultat Net',
+    actionLabel: 'Vérifier la cascade des SIG',
     hasAnomalies: false,
   },
   D1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Capitaux Propres)',
-    cause: 'L\'ouverture N des Capitaux Propres (classe 1) ne concorde pas avec la clôture N-1 majorée du résultat N-1.',
-    solution: 'Vérifiez que l\'affectation du résultat N-1 a bien été enregistrée et que la balance N-1 chargée correspond bien à l\'exercice précédent arrêté.',
+    explication: 'L\'ouverture N des Capitaux Propres (classe 1) ne concorde pas avec la clôture N-1 majorée du résultat N-1.',
+    causesFrequentes: 'L\'affectation du résultat de l\'exercice N-1 (décidée en Assemblée Générale) n\'a pas été enregistrée dans la balance d\'ouverture N, ou la balance N-1 chargée ne correspond pas à la version définitive arrêtée.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier les capitaux propres (Étape 2) »</strong>.',
+      'Dans la Balance N, vérifiez la répartition des à-nouveaux entre le capital (101), les réserves (11) et le report à nouveau (12).',
+      'Vérifiez que le résultat N-1 a bien été soldé vers les réserves ou le report à nouveau conformément aux décisions d\'affectation.',
+      'Assurez-vous que le montant total des capitaux propres au 01/01/N égale rigoureusement le montant de clôture au 31/12/N-1.'
+    ],
+    ecritureConseillee: 'Affectation du résultat N-1 : Débit 131 (Résultat bénéficiaire) / Crédit 11 (Réserves) ou 12 (Report à nouveau)',
     actionLabel: 'Vérifier les capitaux propres (Étape 2)',
     hasAnomalies: false,
   },
   D2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Immobilisations)',
-    cause: 'L\'ouverture N des Immobilisations (classe 2) ne concorde pas avec la clôture N-1.',
-    solution: 'Les valeurs brutes d\'immobilisations au 01/01/N doivent être strictement identiques à celles au 31/12/N-1.',
-    actionLabel: 'Vérifier la classe 2 (Étape 2)',
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Immobilisations Brutes)',
+    explication: 'Les valeurs brutes des immobilisations (classe 2) au 01/01/N sont différentes des valeurs de clôture arrêtées au 31/12/N-1.',
+    causesFrequentes: 'Des écritures d\'acquisition ou de cession d\'actifs ont été antidatées au 01/01 au lieu d\'être comptabilisées dans les mouvements de l\'exercice.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier la classe 2 (Étape 2) »</strong>.',
+      'Pour chaque compte d\'immobilisation (21, 22, 23, 24) : vérifiez que le montant dans la colonne <em>Solde Ant Dbt</em> au 01/01/N est strictement identique au solde de clôture au 31/12/N-1.',
+      'Toute nouvelle acquisition ou mise au rebut doit figurer dans les <strong>Mouvements de la période</strong> et non dans les à-nouveaux d\'ouverture.'
+    ],
+    ecritureConseillee: 'Solde Brut Ouverture N = Solde Brut Clôture N-1 pour tous les comptes de classe 2',
+    actionLabel: 'Vérifier les immobilisations (Étape 2)',
     hasAnomalies: false,
   },
   D3: {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Stocks)',
-    cause: 'L\'ouverture N des Stocks (classe 3) ne concorde pas avec la clôture N-1.',
-    solution: 'Le stock initial au 01/01/N doit être rigoureusement identique au stock final au 31/12/N-1.',
+    explication: 'Le stock initial au 01/01/N (classe 3) ne correspond pas au stock final constaté au 31/12/N-1.',
+    causesFrequentes: 'Modification de la valorisation de l\'inventaire physique sans mise à jour rétrospective.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier les stocks (Étape 2) »</strong>.',
+      'Vérifiez les comptes de stock (31 Marchandises, 32 Matières premières, 36 Produits finis).',
+      'Assurez-vous que le solde d\'ouverture N de chaque compte de stock est exactement égal au solde de clôture N-1.',
+      'La variation de stock de l\'exercice s\'opère via les mouvements avec les comptes 603 ou 73.'
+    ],
+    ecritureConseillee: 'Stock Initial au 01/01/N = Stock Final au 31/12/N-1 (Comptes 31 à 38)',
     actionLabel: 'Vérifier les stocks (Étape 2)',
     hasAnomalies: false,
   },
@@ -1792,26 +1885,47 @@ const CONTROLS_DIAGNOSTIC = {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Tiers)',
-    cause: 'L\'ouverture N des Créances et Dettes circulantes (classe 4) ne concorde pas avec la clôture N-1.',
-    solution: 'Vérifiez les reports des comptes de tiers (clients, fournisseurs, personnel, organismes sociaux, État).',
-    actionLabel: 'Vérifier la classe 4 (Étape 2)',
+    explication: 'Les reports à-nouveau des comptes de tiers (classe 4 : fournisseurs, clients, personnel, État) au 01/01/N ne concordent pas avec les clôtures N-1.',
+    causesFrequentes: 'Des factures ou règlements de l\'exercice N-1 ont été imputés rétroactivement dans le logiciel comptable après l\'arrêté des comptes.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier la classe 4 (Étape 2) »</strong>.',
+      'Vérifiez les comptes 401 (Fournisseurs), 411 (Clients), 42 (Personnel), 43/44 (Organismes sociaux et État).',
+      'Assurez-vous que chaque solde au 01/01/N reporte fidèlement le solde arrêté au 31/12/N-1.',
+      'Les règlements intervenus en N doivent être enregistrés dans les mouvements de l\'année.'
+    ],
+    ecritureConseillee: 'Reports Tiers 01/01/N = Soldes Tiers 31/12/N-1',
+    actionLabel: 'Vérifier les comptes de tiers (Étape 2)',
     hasAnomalies: false,
   },
   D5: {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Trésorerie)',
-    cause: 'L\'ouverture N des comptes de Trésorerie (classe 5) ne concorde pas avec la clôture N-1.',
-    solution: 'Les soldes d\'ouverture de banque et caisse au 01/01/N doivent être exactement égaux aux soldes de clôture N-1.',
-    actionLabel: 'Vérifier la classe 5 (Étape 2)',
+    explication: 'Les soldes d\'ouverture de banque et de caisse (classe 5) au 01/01/N ne correspondent pas aux soldes arrêtés au 31/12/N-1.',
+    causesFrequentes: 'Rapprochement bancaire décalé ou écriture d\'ajustement de caisse saisie à cheval sur deux exercices.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier la classe 5 (Étape 2) »</strong>.',
+      'Vérifiez vos comptes 521 Banque et 571 Caisse au 01/01/N.',
+      'Le solde de caisse et les soldes d\'extraits bancaires au 01/01/N doivent être rigoureusement égaux à ceux au 31/12/N-1.'
+    ],
+    ecritureConseillee: 'Soldes Disponibilités 01/01/N = Soldes Disponibilités 31/12/N-1',
+    actionLabel: 'Vérifier la trésorerie (Étape 2)',
     hasAnomalies: false,
   },
   E7: {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA AUDCIF Art. 42 (Plafond Légal des Amortissements)',
-    cause: 'Les amortissements cumulés (classe 28) dépassent la valeur brute de l\'immobilisation correspondante.',
-    solution: 'Ajustez les dotations aux amortissements ou constatez la sortie des immobilisations totalement amorties ou cédées.',
+    explication: 'Le montant cumulé des amortissements (classe 28) d\'une immobilisation dépasse sa valeur brute d\'acquisition (classe 2x). En comptabilité, un bien ne peut jamais être amorti au-delà de 100% de son coût d\'origine.',
+    causesFrequentes: 'Poursuite automatique des dotations aux amortissements sur un matériel déjà totalement amorti, ou sortie d\'actif enregistrée de manière partielle sans annuler le compte 28 correspondant.',
+    commentRegler: [
+      'Cliquez sur <strong>« ✏️ Vérifier les amortissements »</strong>.',
+      'Dans l\'éditeur, repérez les comptes 28x dont le crédit excède le débit du compte d\'immobilisation 2x correspondant.',
+      'Ajustez le compte 28x pour plafonner son solde au montant exact de la valeur brute d\'origine.',
+      'Si le bien a été cédé ou mis au rebut, enregistrez la sortie totale de l\'actif.',
+      'Enregistrez les modifications.'
+    ],
+    ecritureConseillee: 'Plafond légal : Solde Créditeur Compte 28x <= Solde Débiteur Compte 2x correspondant ; Sortie d\'actif : Débit 28x / Crédit 2x',
     actionLabel: 'Vérifier les amortissements (Étape 2)',
     hasAnomalies: true,
   },
@@ -1819,8 +1933,16 @@ const CONTROLS_DIAGNOSTIC = {
     cible: 'Étape 3 (Informations)',
     step: 3,
     norme: 'SYSCOHADA Note Annexe 13 (Rapprochement du Capital Social)',
-    cause: 'Le capital social saisi dans la Note 13 ne concorde pas avec le compte 101 du Bilan.',
-    solution: 'Rendez-vous à l\'Étape 3 (Informations) pour renseigner le tableau du Capital social (Note 13) avec un montant identique au Bilan.',
+    explication: 'Le total du capital social déclaré dans le tableau des associés/actionnaires de la Note 13 ne concorde pas avec le compte 101000 au Bilan.',
+    causesFrequentes: 'Le tableau des associés à l\'Étape 3 n\'a pas encore été rempli, ou le nombre de parts multiplié par le nominal donne un total différent du solde du compte 101.',
+    commentRegler: [
+      'Cliquez sur le bouton doré <strong>« ✏️ Remplir la Note 13 (Étape 3) »</strong>.',
+      'La page bascule automatiquement à l\'Étape 3 et fait défiler la vue sur le tableau <em>« Capital – associés (Note 13) »</em>.',
+      'Renseignez les noms des associés, le nombre de parts et le montant total souscrit.',
+      'Vérifiez que la somme de la colonne <em>« Montant total (FCFA) »</em> est rigoureusement égale au montant du compte 101000 de votre balance.',
+      'Enregistrez et relancez la génération.'
+    ],
+    ecritureConseillee: 'Note 13 : Somme des montants des associés = Solde du compte 101000 au Bilan',
     actionLabel: 'Remplir la Note 13 (Étape 3)',
     hasAnomalies: false,
   },
@@ -1828,8 +1950,14 @@ const CONTROLS_DIAGNOSTIC = {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA (Structure & Format de Balance Générale)',
-    cause: 'Anomalie de format dans le fichier de balance (numéro de compte absent ou textuel, doublons de comptes, ligne de total collée).',
-    solution: 'Rendez-vous à l\'Étape 2 et vérifiez que votre balance respecte le modèle 6 colonnes (sans lignes de sous-totaux dans les données).',
+    explication: 'Le fichier Excel de balance importé comporte une anomalie structurelle (numéros de comptes non reconnus, colonnes décalées ou lignes de sous-totaux intercalées).',
+    causesFrequentes: 'Export de balance avec en-têtes multiples ou lignes de titres (ex: "TOTAL CLASSE 2") directement dans les données.',
+    commentRegler: [
+      'Téléchargez notre modèle officiel de balance via le bouton à l\'Étape 2.',
+      'Vérifiez que votre fichier contient exactement 6 colonnes sans lignes de sous-totaux intermédiaires.',
+      'Rechargez le fichier conforme à l\'Étape 2.'
+    ],
+    ecritureConseillee: 'Structure attendue : 6 colonnes (Compte, Intitulé, Solde Ant Dbt, Solde Ant Cdt, Mvt Débit, Mvt Crédit)',
     actionLabel: 'Recharger la balance (Étape 2)',
     hasAnomalies: false,
   },
@@ -1837,8 +1965,13 @@ const CONTROLS_DIAGNOSTIC = {
     cible: 'Étape 2 (Balances)',
     step: 2,
     norme: 'SYSCOHADA (Capacité & Exhaustivité des Comptes)',
-    cause: 'La balance dépasse 5 000 lignes ou l\'en-tête de total a été altéré.',
-    solution: 'Vérifiez la taille et les en-têtes de votre fichier de balance à l\'Étape 2.',
+    explication: 'La balance dépasse le seuil maximal de lignes ou la ligne de total de fin de fichier a été altérée.',
+    causesFrequentes: 'Fichier contenant plus de 5 000 lignes ou formules corrompues dans les totaux.',
+    commentRegler: [
+      'Vérifiez que la balance ne comporte pas de lignes vides superflues en fin de fichier.',
+      'Réexportez la balance depuis votre progiciel comptable en format standard xlsx.'
+    ],
+    ecritureConseillee: 'Format standard : données compactes sans cellules fusionnées',
     actionLabel: 'Vérifier le fichier (Étape 2)',
     hasAnomalies: false,
   }
@@ -1933,18 +2066,50 @@ function renderResult(r, fresh) {
             return `<div class="diagnostic-card">
               <div class="diag-card-head">
                 <div>
-                  <span class="badge bad" style="font-weight:700;">⛔ Bloquant · ${esc(c.code)}</span>
-                  <strong style="margin-left:8px;">${esc(c.libelle)}</strong>
+                  <span class="badge bad" style="font-weight:700; font-size:12px; padding:3px 8px;">⛔ Bloquant · Contrôle ${esc(c.code)}</span>
+                  <strong style="margin-left:8px; font-size:14.5px; color:#111827;">${esc(c.libelle)}</strong>
                 </div>
-                <span class="diag-ecart">${esc(ecartTxt)}</span>
+                <span class="diag-ecart" style="font-size:13px; font-weight:800; background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; padding:3px 10px; border-radius:6px;">${esc(ecartTxt)}</span>
               </div>
-              <div class="diag-card-body">
-                ${diag.norme ? `<p style="margin:2px 0 6px 0;"><span class="badge neutral" style="font-weight:700; color:#1e3a8a; background:#eff6ff; border:1px solid #bfdbfe;">📜 ${esc(diag.norme)}</span></p>` : ''}
-                <p><strong>Cause :</strong> ${esc(diag.cause)}</p>
-                <p><strong>Où et comment corriger :</strong> <span style="color:#991b1b; font-weight:600;">[${esc(diag.cible)}]</span> ${esc(diag.solution)}</p>
+              <div class="diag-card-body" style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                ${diag.norme ? `<div><span class="badge neutral" style="font-weight:700; color:#1e3a8a; background:#eff6ff; border:1px solid #bfdbfe; font-size:11.5px; padding:3px 8px;">📜 ${esc(diag.norme)}</span></div>` : ''}
+                
+                <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; padding:8px 12px;">
+                  <div style="font-weight:700; color:#374151; font-size:12.5px; margin-bottom:2px; display:flex; align-items:center; gap:5px;">
+                    <span>🔍</span> <strong>Que signifie ce blocage ?</strong>
+                  </div>
+                  <p style="margin:0; color:#4b5563; line-height:1.45; font-size:13px;">${esc(diag.explication || diag.cause)}</p>
+                </div>
+
+                ${diag.causesFrequentes ? `
+                  <div style="background:#fffbeb; border:1px solid #fef08a; border-radius:6px; padding:8px 12px;">
+                    <div style="font-weight:700; color:#854d0e; font-size:12.5px; margin-bottom:2px; display:flex; align-items:center; gap:5px;">
+                      <span>⚠️</span> <strong>Causes fréquentes constatées :</strong>
+                    </div>
+                    <p style="margin:0; color:#713f12; line-height:1.45; font-size:13px;">${esc(diag.causesFrequentes)}</p>
+                  </div>
+                ` : ''}
+
+                <div style="background:#fefce8; border-left:4px solid #eab308; border-radius:0 6px 6px 0; padding:10px 14px;">
+                  <div style="font-weight:800; color:#78350f; font-size:13px; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+                    <span>🛠️</span> <strong>Comment régler étape par étape :</strong> <span class="badge neutral" style="font-size:11px; margin-left:6px;">[${esc(diag.cible)}]</span>
+                  </div>
+                  ${Array.isArray(diag.commentRegler) ? `
+                    <ol style="margin:4px 0 0 18px; padding:0; color:#78350f; font-size:13px; line-height:1.55;">
+                      ${diag.commentRegler.map(stepTxt => `<li style="margin-bottom:3px;">${stepTxt}</li>`).join('')}
+                    </ol>
+                  ` : `<p style="margin:0; color:#78350f; font-size:13px; line-height:1.5;">${esc(diag.solution)}</p>`}
+                </div>
+
+                ${diag.ecritureConseillee ? `
+                  <div style="background:#f0fdf4; border:1px dashed #86efac; border-radius:6px; padding:6px 12px;">
+                    <span style="font-weight:700; color:#166534; font-size:12px;">💡 Règle / Écriture comptable conseillée :</span>
+                    <div style="font-family:monospace; font-size:12px; color:#14532d; font-weight:600; margin-top:2px;">${esc(diag.ecritureConseillee)}</div>
+                  </div>
+                ` : ''}
               </div>
-              <div class="diag-card-foot">
-                <button type="button" class="btn sm gold btn-diag-action" data-diag-code="${esc(c.code)}">✏️ ${esc(diag.actionLabel)}</button>
+              <div class="diag-card-foot" style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; border-top:1px solid #f3f4f6; padding-top:10px;">
+                <button type="button" class="btn sm gold btn-diag-action" data-diag-code="${esc(c.code)}" style="font-weight:800; padding:6px 16px; font-size:12.5px;">✏️ ${esc(diag.actionLabel)}</button>
                 ${diag.hasAnomalies && an.length ? `<button type="button" class="btn sm ghost" data-open-anomalies="true">🔍 Voir les comptes signalés (${an.length})</button>` : ''}
               </div>
             </div>`;

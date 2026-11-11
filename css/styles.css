@@ -229,60 +229,87 @@ details .inner { padding: 4px 16px 16px; }
 .table tr.tr-vigilance-err td:first-child { border-left: 4px solid #f59e0b; }
 .ctl-guide-note { font-size: 11.5px; color: #7f1d1d; background: #fee2e2; border-radius: 4px; padding: 4px 8px; margin-top: 4px; line-height: 1.4; }
 
-/* ==================== VISUALISEUR & ÉDITEUR DE BALANCE ==================== */
+/* ==================== VISUALISEUR & ÉDITEUR DE BALANCE (AFFICHAGE AGRANDI) ==================== */
 .modal-box.modal-xl {
-  max-width: 1250px;
-  width: 96vw;
-  max-height: 94vh;
+  max-width: 98vw;
+  width: 98vw;
+  height: 96vh;
+  max-height: 96vh;
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(18, 58, 50, .25);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-box.modal-xl .modal-head {
+  padding: 16px 24px;
+}
+.modal-box.modal-xl .modal-head h2 {
+  font-size: 20px;
+  font-weight: 800;
+}
+.modal-box.modal-xl .modal-head .muted {
+  font-size: 13.5px;
+  margin-top: 2px;
+}
+
+.modal-box.modal-xl .modal-body {
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
 }
 
 .bal-kpi-bar {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 12px 16px;
+  border-radius: 10px;
+  padding: 14px 20px;
   margin-bottom: 14px;
+  flex-shrink: 0;
 }
 .bal-kpi-item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 .bal-kpi-label {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   color: var(--muted);
-  letter-spacing: .03em;
+  letter-spacing: .04em;
 }
 .bal-kpi-val {
-  font-size: 13.5px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 .bal-kpi-pill {
-  font-size: 11px;
-  padding: 2px 7px;
+  font-size: 12px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-weight: 800;
 }
-.bal-kpi-pill.ok { background: #dcfce7; color: #15803d; }
-.bal-kpi-pill.bad { background: #fee2e2; color: #b91c1c; }
+.bal-kpi-pill.ok { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.bal-kpi-pill.bad { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
 
 .bal-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .bal-toolbar-left {
   display: flex;
@@ -291,25 +318,37 @@ details .inner { padding: 4px 16px 16px; }
   flex-wrap: wrap;
   flex: 1;
 }
+.bal-toolbar-left input.search {
+  font-size: 14px;
+  padding: 8px 14px;
+  min-width: 320px;
+  border-radius: 8px;
+}
 .bal-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+}
+.bal-toolbar button {
+  font-size: 13.5px;
+  padding: 8px 14px;
 }
 
 .bal-table-wrap {
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  max-height: 52vh;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  flex: 1;
+  min-height: 380px;
   background: #ffffff;
   position: relative;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.03);
 }
 .bal-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: 14px;
 }
 .bal-table thead th {
   position: sticky;
@@ -317,31 +356,33 @@ details .inner { padding: 4px 16px 16px; }
   background: #f1f5f3;
   z-index: 2;
   border-bottom: 2px solid var(--line);
-  padding: 8px 6px;
+  padding: 11px 8px;
   text-align: left;
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 13.5px;
   color: var(--ink-2);
   white-space: nowrap;
+  letter-spacing: .02em;
 }
 .bal-table thead th.th-num {
   text-align: right;
 }
 .bal-table tbody td {
-  padding: 4px 6px;
+  padding: 5px 6px;
   border-top: 1px solid var(--line-2);
   vertical-align: middle;
 }
 .bal-table tbody tr:hover {
-  background: #f9fbf9;
+  background: #f4f8f6;
 }
 .bal-table tr.bal-row-err td {
   background: #fff5f5 !important;
 }
 .bal-table input {
-  padding: 5px 7px;
-  font-size: 12.5px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  padding: 7px 10px;
+  font-size: 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 6px;
   width: 100%;
   box-sizing: border-box;
   background: #fff;
@@ -350,39 +391,68 @@ details .inner { padding: 4px 16px 16px; }
 .bal-table input:focus {
   border-color: var(--brand);
   outline: none;
-  box-shadow: 0 0 0 2px rgba(18, 58, 50, .15);
+  box-shadow: 0 0 0 3px rgba(18, 58, 50, .18);
   background: #fff;
 }
 .bal-table input.num-input {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 14px;
 }
 .bal-table input.acc-input {
-  font-weight: 700;
+  font-weight: 800;
   color: var(--brand);
+  font-size: 14.5px;
+  letter-spacing: .03em;
+}
+.bal-table input.lib-input {
+  font-weight: 500;
+}
+.bal-table td.cloture-cell {
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 0 10px;
 }
 .bal-table .btn-del-row {
   background: none;
   border: none;
   color: #ef4444;
   cursor: pointer;
-  padding: 4px 6px;
-  font-size: 14px;
-  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 16px;
+  border-radius: 6px;
   transition: background .15s;
 }
 .bal-table .btn-del-row:hover {
   background: #fee2e2;
 }
+
 .bal-pagination {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 4px 0;
-  font-size: 13px;
+  padding: 12px 6px 0;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--muted);
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
+  flex-shrink: 0;
 }
+.bal-pagination button {
+  font-size: 13.5px;
+  padding: 6px 14px;
+}
+
+.modal-box.modal-xl .modal-foot {
+  padding: 14px 24px;
+}
+.modal-box.modal-xl .modal-foot button {
+  font-size: 14.5px;
+  padding: 9px 18px;
+}
+
 
 

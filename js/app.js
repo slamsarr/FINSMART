@@ -679,14 +679,14 @@ function refreshBalEditorTable() {
 
       rowsHtml += `
         <tr data-row-id="${r.id}" class="${r.hasErr ? 'bal-row-err' : ''}">
-          <td style="text-align:center; color:var(--muted); font-size:11px;">${start + idx + 1}</td>
+          <td style="text-align:center; color:var(--muted); font-size:12.5px; font-weight:600;">${start + idx + 1}</td>
           <td><input type="text" class="acc-input" data-id="${r.id}" data-col="acc" value="${esc(r.acc)}" placeholder="ex. 411100"></td>
           <td><input type="text" class="lib-input" data-id="${r.id}" data-col="lib" value="${esc(r.lib)}" placeholder="Intitulé du compte"></td>
           <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="sad" value="${r.sad !== 0 && r.sad !== null && r.sad !== undefined ? r.sad : ''}" placeholder="0"></td>
           <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="sac" value="${r.sac !== 0 && r.sac !== null && r.sac !== undefined ? r.sac : ''}" placeholder="0"></td>
           <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="md" value="${r.md !== 0 && r.md !== null && r.md !== undefined ? r.md : ''}" placeholder="0"></td>
           <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="mc" value="${r.mc !== 0 && r.mc !== null && r.mc !== undefined ? r.mc : ''}" placeholder="0"></td>
-          <td class="th-num" id="cloture-${r.id}" style="font-weight:700; color:${clotureColor};">${clotureTxt}</td>
+          <td class="th-num cloture-cell" id="cloture-${r.id}" style="color:${clotureColor};">${clotureTxt}</td>
           <td style="text-align:center;"><button type="button" class="btn-del-row" data-del-id="${r.id}" title="Supprimer ce compte">🗑️</button></td>
         </tr>
       `;

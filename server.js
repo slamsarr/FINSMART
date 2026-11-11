@@ -23,7 +23,46 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon',
 };
 
-// ------------------------------------------------------------------ PayTech Config
+// ------------------------------------------------------------------ PayDunya Config
+function loadPayDunyaConfig() {
+  let fileConfig = {};
+  const paths = [
+    path.join(__dirname, 'paydunya.config.local.json'),
+    path.join(__dirname, 'paydunya.config.json'),
+  ];
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      try {
+        fileConfig = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        break;
+      } catch (e) {
+        console.error('Erreur lecture config PayDunya:', e.message);
+      }
+    }
+  }
+
+  const masterKey = process.env.PAYDUNYA_MASTER_KEY || fileConfig.master_key || '';
+  const privateKey = process.env.PAYDUNYA_PRIVATE_KEY || fileConfig.private_key || '';
+  const token = process.env.PAYDUNYA_TOKEN || fileConfig.token || '';
+
+  const isPlaceholder = !masterKey || masterKey.includes('VOTRE_') ||
+                        !privateKey || privateKey.includes('VOTRE_') ||
+                        !token || token.includes('VOTRE_');
+
+  return {
+    master_key: masterKey,
+    private_key: privateKey,
+    token: token,
+    env: process.env.PAYDUNYA_ENV || fileConfig.env || 'test',
+    currency: fileConfig.currency || 'XOF',
+    callback_url: fileConfig.callback_url || '',
+    return_url: fileConfig.return_url || '',
+    cancel_url: fileConfig.cancel_url || '',
+    is_ready: !isPlaceholder,
+  };
+}
+
+// ------------------------------------------------------------------ PayTech Config (Legacy / Fallback)
 function loadPayTechConfig() {
   let fileConfig = {};
   const paths = [
@@ -57,7 +96,7 @@ function loadPayTechConfig() {
   };
 }
 
-// ------------------------------------------------------------------ Helper Body
+// ------------------------------------------------------------------ Helper Body & JSON
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
@@ -93,53 +132,160 @@ function sendJson(res, status, data) {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, API_KEY, API_SECRET',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, PAYDUNYA-MASTER-KEY, PAYDUNYA-PRIVATE-KEY, PAYDUNYA-TOKEN, API_KEY, API_SECRET',
   });
   res.end(JSON.stringify(data));
 }
 
-// ------------------------------------------------------------------ PayTech API Handler
-async function handlePayTechApi(req, res, parsedUrl) {
+// ------------------------------------------------------------------ Helper Supabase Credit
+async function applyCreditsToUser(refCommand, token, fallbackCredits = 1, gatewayName = 'PayDunya') {
+  let completed = false;
+  // 1. Appel RPC Supabase
+  try {
+    const sbRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/complete_payment_by_ref`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({
+        p_ref_command: refCommand,
+        p_external_token: token || null,
+      }),
+    });
+    const sbData = await sbRes.json();
+    if (sbData && sbData.ok) {
+      completed = true;
+      console.log(`[${gatewayName} IPN] Succès via complete_payment_by_ref:`, sbData);
+    } else {
+      console.warn(`[${gatewayName} IPN] RPC complete_payment_by_ref résultat non concluant:`, sbData);
+    }
+  } catch (sbErr) {
+    console.error(`[${gatewayName} IPN] Erreur appel RPC:`, sbErr);
+  }
+
+  // 2. Fallback REST
+  if (!completed) {
+    try {
+      const pRes = await fetch(`${SUPABASE_URL}/rest/v1/payments?reference_externe=eq.${encodeURIComponent(refCommand)}&select=*`, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+        }
+      });
+      const payments = await pRes.json();
+      const payRow = payments?.[0];
+
+      if (payRow && payRow.statut !== 'completed') {
+        const userId = payRow.user_id;
+        const creditsToAdd = Number(payRow.credits_achetes) || Number(fallbackCredits) || 1;
+
+        // Lecture solde actuel
+        const profRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=credits_balance`, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+          }
+        });
+        const profData = await profRes.json();
+        const oldBal = Number(profData?.[0]?.credits_balance || 0);
+        const newBal = oldBal + creditsToAdd;
+
+        // Créditer profil
+        await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({ credits_balance: newBal }),
+        });
+
+        // Mettre à jour payments -> completed
+        await fetch(`${SUPABASE_URL}/rest/v1/payments?id=eq.${payRow.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({
+            statut: 'completed',
+            updated_at: new Date().toISOString(),
+          }),
+        });
+
+        // Écrire dans credit_ledger
+        await fetch(`${SUPABASE_URL}/rest/v1/credit_ledger`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            montant_credits: creditsToAdd,
+            solde_apres: newBal,
+            motif: 'purchase',
+            payment_id: payRow.id,
+            commentaire: `Achat ${payRow.package_id || 'crédits'} validé via IPN ${gatewayName}`,
+          }),
+        });
+
+        console.log(`[${gatewayName} IPN] Fallback REST réussi : +${creditsToAdd} crédits alloués à l'utilisateur ${userId}. Nouveau solde = ${newBal}`);
+      }
+    } catch (fbErr) {
+      console.error(`[${gatewayName} IPN] Erreur secours REST:`, fbErr);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ PayDunya API Handler
+async function handlePayDunyaApi(req, res, parsedUrl) {
   const method = req.method.toUpperCase();
   const pathname = parsedUrl.pathname;
-  const config = loadPayTechConfig();
+  const config = loadPayDunyaConfig();
 
   // CORS preflight
   if (method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, API_KEY, API_SECRET',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, PAYDUNYA-MASTER-KEY, PAYDUNYA-PRIVATE-KEY, PAYDUNYA-TOKEN',
     });
     res.end();
     return;
   }
 
-  // 1. Statut PayTech
-  if (pathname === '/api/paytech/status' && method === 'GET') {
+  // 1. Statut PayDunya
+  if (pathname === '/api/paydunya/status' && method === 'GET') {
     return sendJson(res, 200, {
       ok: true,
+      gateway: 'paydunya',
       is_ready: config.is_ready,
       env: config.env,
       currency: config.currency,
       message: config.is_ready
-        ? 'Passerelle PayTech connectée et prête.'
-        : 'Clés PayTech en attente de configuration dans paytech.config.json (mode simulation actif).',
+        ? 'Passerelle PayDunya connectée et prête.'
+        : 'Clés PayDunya en attente de configuration dans paydunya.config.json (mode simulation actif).',
     });
   }
 
-  // 2. Création de paiement PayTech
-  if (pathname === '/api/paytech/request-payment' && method === 'POST') {
+  // 2. Création de facture PayDunya (Checkout Invoice)
+  if (pathname === '/api/paydunya/request-payment' && method === 'POST') {
     try {
       const body = await parseBody(req);
       const {
         package_id,
-        item_name,
+        item_name = 'Pack FINSMART',
         item_price,
         credits = 1,
-        target_payment,
         phone_number = '',
         user_id,
+        user_email = '',
         full_name = '',
         payment_id,
       } = body;
@@ -156,26 +302,19 @@ async function handlePayTechApi(req, res, parsedUrl) {
       const proto = req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http');
       const origin = `${proto}://${host}`;
 
-      let ipn_url = config.ipn_url || `${origin}/api/paytech/ipn`;
-      if (ipn_url.startsWith('http://')) ipn_url = 'https://' + ipn_url.slice(7);
-      const success_url = config.success_url || `${origin}/?payment=success&ref=${encodeURIComponent(ref_command)}`;
+      let callback_url = config.callback_url || `${origin}/api/paydunya/ipn`;
+      if (callback_url.startsWith('http://') && !callback_url.includes('localhost')) {
+        callback_url = 'https://' + callback_url.slice(7);
+      }
+      const return_url = config.return_url || `${origin}/?payment=success&ref=${encodeURIComponent(ref_command)}`;
       const cancel_url = config.cancel_url || `${origin}/?payment=cancel&ref=${encodeURIComponent(ref_command)}`;
 
-      // Mapping du moyen de paiement cible
-      const TARGET_MAP = {
-        wave: 'Wave',
-        orange_money: 'Orange Money',
-        free_money: 'Free Money',
-        carte: 'Carte Bancaire',
-      };
-      const tp = TARGET_MAP[target_payment] || target_payment || 'Wave';
-
-      // Nettoyage du numéro de téléphone sénégalais (ex: 221770000000 -> 770000000)
+      // Nettoyage du numéro de téléphone
       const cleanPhone = String(phone_number).replace(/[\s\-\+\.]/g, '').replace(/^221/, '');
 
-      // SI LES CLÉS NE SONT PAS ENCORE RENSEIGNÉES (Mode simulation transparente pour tests)
+      // SI LES CLÉS NE SONT PAS ENCORE CONFIGURÉES : Mode simulation transparent
       if (!config.is_ready) {
-        console.log(`[PayTech Sandbox] Demande de paiement ${ref_command} (${item_price} FCFA, ${credits} crédits) simulée avec succès.`);
+        console.log(`[PayDunya Sandbox] Demande ${ref_command} (${item_price} FCFA, ${credits} crédits) simulée avec succès.`);
         return sendJson(res, 200, {
           ok: true,
           success: 1,
@@ -183,221 +322,224 @@ async function handlePayTechApi(req, res, parsedUrl) {
           ref_command,
           token: 'sandbox-' + ref_command,
           redirect_url: `${origin}/?payment=success&ref=${encodeURIComponent(ref_command)}&mock=1&credits=${credits}`,
-          message: 'Mode simulation sandbox : clés PayTech non encore configurées.',
+          message: 'Mode simulation sandbox : clés PayDunya non encore configurées.',
         });
       }
 
-      // REQUÊTE RÉELLE VERS L'API PAYTECH
-      const paytechPayload = {
-        item_name: item_name || `Pack FINSMART (${credits} liasse${credits > 1 ? 's' : ''})`,
-        item_price: Number(item_price),
-        currency: config.currency,
-        ref_command: ref_command,
-        command_name: `Achat de ${credits} crédits FINSMART - ${item_name || 'Liasses DGID'}`,
-        env: config.env,
-        ipn_url: ipn_url,
-        success_url: success_url,
-        cancel_url: cancel_url,
-        custom_field: JSON.stringify({
-          userId: user_id || null,
-          packageId: package_id || null,
-          paymentId: payment_id || null,
-          credits: credits,
+      // REQUÊTE RÉELLE VERS L'API PAYDUNYA
+      const invoiceEndpoint = (config.env === 'live')
+        ? 'https://app.paydunya.com/api/v1/checkout-invoice/create'
+        : 'https://app.paydunya.com/sandbox-api/v1/checkout-invoice/create';
+
+      const invoicePayload = {
+        invoice: {
+          total_amount: Number(item_price),
+          description: `Achat ${item_name} (${credits} liasse${credits > 1 ? 's' : ''})`
+        },
+        store: {
+          name: 'FINSMART',
+          tagline: 'Génération Liasses Fiscales SYSCOHADA',
+          phone_number: '770000000',
+          postal_address: 'Dakar, Sénégal',
+          website_url: origin
+        },
+        custom_data: {
+          ref_command,
+          user_id: user_id || null,
+          package_id: package_id || null,
+          payment_id: payment_id || null,
+          credits,
           phone: cleanPhone,
-        }),
+          full_name,
+        },
+        actions: {
+          cancel_url,
+          return_url,
+          callback_url,
+        }
       };
 
-      console.log('[PayTech] Envoi requête à PayTech:', {
+      console.log('[PayDunya] Envoi requête création de facture:', {
         ref_command,
         item_price,
-        env: config.env,
-        target: tp,
+        endpoint: invoiceEndpoint,
       });
 
-      const ptRes = await fetch('https://paytech.sn/api/payment/request-payment', {
+      const pdRes = await fetch(invoiceEndpoint, {
         method: 'POST',
         headers: {
-          'Accept': 'application/json',
           'Content-Type': 'application/json',
-          'API_KEY': config.api_key,
-          'API_SECRET': config.api_secret,
+          'PAYDUNYA-MASTER-KEY': config.master_key,
+          'PAYDUNYA-PRIVATE-KEY': config.private_key,
+          'PAYDUNYA-TOKEN': config.token,
         },
-        body: JSON.stringify(paytechPayload),
+        body: JSON.stringify(invoicePayload),
       });
 
-      const ptData = await ptRes.json().catch(() => ({}));
+      const pdData = await pdRes.json().catch(() => ({}));
 
-      const rawRedirect = ptData.redirect_url || ptData.redirectUrl;
-      if (ptData.success === 1 && rawRedirect) {
-        // Paramètres d'auto-remplissage selon documentation PayTech
-        // ?pn=numero & nn=221 & fn=Nom & tp=Wave & nac=1
-        const u = new URL(rawRedirect);
-        if (cleanPhone) {
-          u.searchParams.set('pn', cleanPhone);
-          u.searchParams.set('nn', '221');
-        }
-        if (full_name) u.searchParams.set('fn', full_name);
-        if (tp) u.searchParams.set('tp', tp);
-        u.searchParams.set('nac', tp === 'Carte Bancaire' ? '0' : '1');
-
-        console.log('[PayTech] Succès création paiement. URL:', u.toString());
+      if (pdData.response_code === '00' && pdData.response_text) {
+        console.log('[PayDunya] Succès création facture. Redirection:', pdData.response_text);
         return sendJson(res, 200, {
           ok: true,
           success: 1,
-          token: ptData.token,
-          redirect_url: u.toString(),
+          token: pdData.token,
+          redirect_url: pdData.response_text,
           ref_command: ref_command,
         });
       } else {
-        console.error('[PayTech] Erreur retournée par PayTech:', ptData);
+        console.error('[PayDunya] Erreur retournée par PayDunya:', pdData);
         return sendJson(res, 400, {
           ok: false,
-          error: ptData.errors || ptData.message || 'Échec de l\'initialisation auprès de PayTech.',
-          details: ptData,
+          error: pdData.response_text || pdData.description || 'Échec de création de la facture PayDunya.',
+          details: pdData,
         });
       }
     } catch (err) {
-      console.error('[PayTech] Exception dans request-payment:', err);
+      console.error('[PayDunya] Exception dans request-payment:', err);
       return sendJson(res, 500, { ok: false, error: err.message });
     }
   }
 
-  // 3. Webhook IPN PayTech (Instant Payment Notification)
-  if (pathname === '/api/paytech/ipn' && method === 'POST') {
+  // 3. Webhook IPN PayDunya (Notification instantanée)
+  if (pathname === '/api/paydunya/ipn' && method === 'POST') {
     try {
       const body = await parseBody(req);
-      console.log('[PayTech IPN] Notification reçue:', body);
+      console.log('[PayDunya IPN] Notification reçue:', body);
 
-      const typeEvent = body.type_event;
-      const refCommand = body.ref_command;
-      const itemPrice = body.item_price;
-      const token = body.token;
-      const apiKeySha = body.api_key_sha256;
-      const apiSecretSha = body.api_secret_sha256;
+      const data = (body.data && typeof body.data === 'object') ? body.data : body;
+      const receivedHash = data.hash || body.hash || '';
+      const status = data.status || body.status || '';
 
-      // Si configuré avec clés réelles, vérification cryptographique SHA-256
-      if (config.is_ready) {
-        const expectedKeySha = crypto.createHash('sha256').update(config.api_key).digest('hex');
-        const expectedSecretSha = crypto.createHash('sha256').update(config.api_secret).digest('hex');
+      let customData = data.custom_data || body.custom_data || {};
+      if (typeof customData === 'string') {
+        try { customData = JSON.parse(customData); } catch {}
+      }
 
-        if (apiKeySha !== expectedKeySha || apiSecretSha !== expectedSecretSha) {
-          console.warn('[PayTech IPN] Signature SHA-256 invalide ! Rejet.');
-          res.writeHead(403, { 'Content-Type': 'text/plain' });
-          res.end('Signature invalide');
+      const invoice = data.invoice || body.invoice || {};
+      const token = invoice.token || data.token || body.token || '';
+      const refCommand = customData.ref_command || data.ref_command || '';
+      const credits = Number(customData.credits) || 1;
+
+      // Vérification SHA-512 de la clé Master PayDunya
+      if (config.is_ready && config.master_key) {
+        const expectedHash = crypto.createHash('sha512').update(config.master_key).digest('hex');
+        if (!receivedHash || expectedHash.toLowerCase() !== String(receivedHash).toLowerCase()) {
+          console.warn('[PayDunya IPN] Signature SHA-512 invalide ! Rejet.');
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Signature SHA-512 PayDunya invalide' }));
           return;
         }
       }
 
-      if (typeEvent === 'sale_complete') {
-        console.log(`[PayTech IPN] Validation du paiement ${refCommand} (${itemPrice} FCFA)`);
-
-        let completed = false;
-        // 1. Tentative d'appel de la procédure Supabase complete_payment_by_ref
-        try {
-          const sbRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/complete_payment_by_ref`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': SUPABASE_KEY,
-              'Authorization': `Bearer ${SUPABASE_KEY}`,
-            },
-            body: JSON.stringify({
-              p_ref_command: refCommand,
-              p_external_token: token || null,
-            }),
-          });
-          const sbData = await sbRes.json();
-          if (sbData && sbData.ok) {
-            completed = true;
-            console.log('[PayTech IPN] Succès via complete_payment_by_ref:', sbData);
-          } else {
-            console.warn('[PayTech IPN] RPC complete_payment_by_ref résultat non concluant:', sbData);
-          }
-        } catch (sbErr) {
-          console.error('[PayTech IPN] Erreur appel RPC:', sbErr);
-        }
-
-        // 2. Fallback direct REST si la RPC n'a pas validé la commande
-        if (!completed) {
-          try {
-            const pRes = await fetch(`${SUPABASE_URL}/rest/v1/payments?reference_externe=eq.${encodeURIComponent(refCommand)}&select=*`, {
-              headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`,
-              }
-            });
-            const payments = await pRes.json();
-            const payRow = payments?.[0];
-
-            if (payRow && payRow.statut !== 'completed') {
-              const userId = payRow.user_id;
-              const creditsToAdd = Number(payRow.credits_achetes) || 1;
-
-              // Lecture solde actuel
-              const profRes = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=credits_balance`, {
-                headers: {
-                  'apikey': SUPABASE_KEY,
-                  'Authorization': `Bearer ${SUPABASE_KEY}`,
-                }
-              });
-              const profData = await profRes.json();
-              const oldBal = Number(profData?.[0]?.credits_balance || 0);
-              const newBal = oldBal + creditsToAdd;
-
-              // Créditer le profil
-              await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
-                method: 'PATCH',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'apikey': SUPABASE_KEY,
-                  'Authorization': `Bearer ${SUPABASE_KEY}`,
-                },
-                body: JSON.stringify({ credits_balance: newBal }),
-              });
-
-              // Mettre à jour payments -> completed
-              await fetch(`${SUPABASE_URL}/rest/v1/payments?id=eq.${payRow.id}`, {
-                method: 'PATCH',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'apikey': SUPABASE_KEY,
-                  'Authorization': `Bearer ${SUPABASE_KEY}`,
-                },
-                body: JSON.stringify({
-                  statut: 'completed',
-                  updated_at: new Date().toISOString(),
-                }),
-              });
-
-              // Écrire l'audit dans credit_ledger
-              await fetch(`${SUPABASE_URL}/rest/v1/credit_ledger`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'apikey': SUPABASE_KEY,
-                  'Authorization': `Bearer ${SUPABASE_KEY}`,
-                },
-                body: JSON.stringify({
-                  user_id: userId,
-                  montant_credits: creditsToAdd,
-                  solde_apres: newBal,
-                  motif: 'purchase',
-                  payment_id: payRow.id,
-                  commentaire: `Achat ${payRow.package_id || 'crédits'} validé via IPN`,
-                }),
-              });
-
-              console.log(`[PayTech IPN] Fallback REST réussi : +${creditsToAdd} crédits alloués à l'utilisateur ${userId}. Solde = ${newBal}`);
-            }
-          } catch (fbErr) {
-            console.error('[PayTech IPN] Erreur secours REST:', fbErr);
-          }
-        }
+      if (status === 'completed' && refCommand) {
+        console.log(`[PayDunya IPN] Validation du paiement ${refCommand} (+${credits} crédits)`);
+        await applyCreditsToUser(refCommand, token, credits, 'PayDunya');
       }
 
-      return sendJson(res, 200, { success: 1, message: 'IPN traité avec succès' });
+      return sendJson(res, 200, { success: 1, message: 'IPN PayDunya validé avec succès' });
     } catch (err) {
-      console.error('[PayTech IPN] Erreur:', err);
+      console.error('[PayDunya IPN] Erreur:', err);
+      return sendJson(res, 500, { success: 0, error: err.message });
+    }
+  }
+
+  // 4. Confirmation de statut par Token
+  if (pathname === '/api/paydunya/confirm' && method === 'GET') {
+    try {
+      const token = parsedUrl.searchParams.get('token');
+      if (!token) {
+        return sendJson(res, 400, { ok: false, error: 'Paramètre token requis.' });
+      }
+
+      if (!config.is_ready || token.startsWith('sandbox-')) {
+        return sendJson(res, 200, {
+          ok: true,
+          status: 'completed',
+          is_mock: true,
+          token,
+          message: 'Mode simulation sandbox PayDunya.'
+        });
+      }
+
+      const confirmEndpoint = (config.env === 'live')
+        ? `https://app.paydunya.com/api/v1/checkout-invoice/confirm/${encodeURIComponent(token)}`
+        : `https://app.paydunya.com/sandbox-api/v1/checkout-invoice/confirm/${encodeURIComponent(token)}`;
+
+      const cRes = await fetch(confirmEndpoint, {
+        headers: {
+          'Content-Type': 'application/json',
+          'PAYDUNYA-MASTER-KEY': config.master_key,
+          'PAYDUNYA-PRIVATE-KEY': config.private_key,
+          'PAYDUNYA-TOKEN': config.token,
+        }
+      });
+      const cData = await cRes.json().catch(() => ({}));
+      return sendJson(res, cRes.status, {
+        ok: cRes.ok,
+        status: cData.status || 'unknown',
+        data: cData
+      });
+    } catch (err) {
+      console.error('[PayDunya Confirm] Erreur:', err);
+      return sendJson(res, 500, { ok: false, error: err.message });
+    }
+  }
+
+  return sendJson(res, 404, { ok: false, error: 'Route PayDunya non trouvée' });
+}
+
+// ------------------------------------------------------------------ PayTech API Handler (Compatibilité)
+async function handlePayTechApi(req, res, parsedUrl) {
+  const method = req.method.toUpperCase();
+  const pathname = parsedUrl.pathname;
+  const config = loadPayTechConfig();
+
+  // CORS preflight
+  if (method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, API_KEY, API_SECRET',
+    });
+    res.end();
+    return;
+  }
+
+  if (pathname === '/api/paytech/status' && method === 'GET') {
+    return sendJson(res, 200, {
+      ok: true,
+      gateway: 'paytech',
+      is_ready: config.is_ready,
+      env: config.env,
+      currency: config.currency,
+      message: 'Route de compatibilité PayTech.',
+    });
+  }
+
+  if (pathname === '/api/paytech/request-payment' && method === 'POST') {
+    // Redirige vers PayDunya transparentement
+    parsedUrl.pathname = '/api/paydunya/request-payment';
+    return handlePayDunyaApi(req, res, parsedUrl);
+  }
+
+  if (pathname === '/api/paytech/ipn' && method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      const typeEvent = body.type_event;
+      const refCommand = body.ref_command;
+      const token = body.token;
+      let credits = 1;
+      try {
+        const cf = JSON.parse(body.custom_field || '{}');
+        if (cf.credits) credits = Number(cf.credits);
+      } catch {}
+
+      if (typeEvent === 'sale_complete' && refCommand) {
+        await applyCreditsToUser(refCommand, token, credits, 'PayTech');
+      }
+      return sendJson(res, 200, { success: 1, message: 'IPN PayTech traité' });
+    } catch (err) {
       return sendJson(res, 500, { success: 0, error: err.message });
     }
   }
@@ -410,6 +552,9 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
   // Routes API
+  if (parsedUrl.pathname.startsWith('/api/paydunya')) {
+    return handlePayDunyaApi(req, res, parsedUrl);
+  }
   if (parsedUrl.pathname.startsWith('/api/paytech')) {
     return handlePayTechApi(req, res, parsedUrl);
   }

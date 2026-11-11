@@ -46,7 +46,7 @@ AddDefaultCharset UTF-8
 # 6. Protection des fichiers sensibles & désactivation de l'exploration
 Options -Indexes
 
-<FilesMatch "(\.git|\.env|paytech\.config|\.sql|\.log|package\.json|\.sh)$">
+<FilesMatch "(\.git|\.env|paydunya\.config|paytech\.config|\.sql|\.log|package\.json|\.sh)$">
   Order allow,deny
   Deny from all
 </FilesMatch>
@@ -59,11 +59,15 @@ Options -Indexes
   RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 </IfModule>
 
-# 7. Réécriture des routes API PayTech (Hostinger)
+# 8. Réécriture des routes API PayDunya et PayTech (Hostinger)
 <IfModule mod_rewrite.c>
   RewriteEngine On
+  RewriteRule ^api/paydunya/request-payment$ api/paydunya/request-payment.php [L,QSA]
+  RewriteRule ^api/paydunya/status$ api/paydunya/status.php [L,QSA]
+  RewriteRule ^api/paydunya/ipn$ api/paydunya/ipn.php [L,QSA]
+  RewriteRule ^api/paydunya/confirm$ api/paydunya/confirm.php [L,QSA]
+
   RewriteRule ^api/paytech/request-payment$ api/paytech/request-payment.php [L,QSA]
   RewriteRule ^api/paytech/status$ api/paytech/status.php [L,QSA]
   RewriteRule ^api/paytech/ipn$ api/paytech/ipn.php [L,QSA]
 </IfModule>
-

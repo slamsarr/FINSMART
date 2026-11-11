@@ -102,11 +102,13 @@ async function checkPaymentReturnParams() {
   const url = new URL(window.location.href);
   const paymentStatus = url.searchParams.get('payment');
   const ref = url.searchParams.get('ref');
+  const token = url.searchParams.get('token');
   const mockCredits = parseInt(url.searchParams.get('credits') || '0', 10);
 
   if (paymentStatus === 'success') {
     url.searchParams.delete('payment');
     url.searchParams.delete('ref');
+    url.searchParams.delete('token');
     url.searchParams.delete('mock');
     url.searchParams.delete('credits');
     window.history.replaceState({}, document.title, url.pathname + url.hash);
@@ -117,7 +119,10 @@ async function checkPaymentReturnParams() {
     // 1. Appel de la procédure stockée Supabase complete_payment_by_ref
     if (ref) {
       try {
-        const { data: rpcRes, error: rpcErr } = await sb.rpc('complete_payment_by_ref', { p_ref_command: ref });
+        const { data: rpcRes, error: rpcErr } = await sb.rpc('complete_payment_by_ref', {
+          p_ref_command: ref,
+          p_external_token: token || null
+        });
         if (!rpcErr && rpcRes && rpcRes.ok) {
           rpcDone = true;
           creditsAdded = Number(rpcRes.credits_added) || 0;
@@ -163,7 +168,7 @@ async function checkPaymentReturnParams() {
                 solde_apres: newBal,
                 motif: 'purchase',
                 payment_id: payRow.id,
-                commentaire: `Achat ${payRow.package_id || 'crédits'} (PayTech ${ref})`
+                commentaire: `Achat ${payRow.package_id || 'crédits'} (PayDunya ${ref})`
               });
             } catch (_) {}
 
@@ -198,7 +203,7 @@ async function checkPaymentReturnParams() {
 
     const soldeActuel = state.profile?.credits_balance ?? '—';
     const nbCredits = creditsAdded || 1;
-    toast(`✅ Paiement validé avec succès (${ref || 'PayTech'}) ! +${nbCredits} crédit${nbCredits > 1 ? 's' : ''} ajouté${nbCredits > 1 ? 's' : ''}. Nouveau solde : ${soldeActuel} crédit${soldeActuel > 1 ? 's' : ''}.`);
+    toast(`✅ Paiement validé avec succès (${ref || 'PayDunya'}) ! +${nbCredits} crédit${nbCredits > 1 ? 's' : ''} ajouté${nbCredits > 1 ? 's' : ''}. Nouveau solde : ${soldeActuel} crédit${soldeActuel > 1 ? 's' : ''}.`);
 
     if (location.hash === '#/pricing' || location.hash === '#pricing') {
       renderPricing();
@@ -208,9 +213,10 @@ async function checkPaymentReturnParams() {
   } else if (paymentStatus === 'cancel') {
     url.searchParams.delete('payment');
     url.searchParams.delete('ref');
+    url.searchParams.delete('token');
     window.history.replaceState({}, document.title, url.pathname + url.hash);
 
-    toast('Paiement PayTech annulé. Aucun débit n\'a été effectué.', true);
+    toast('Paiement PayDunya annulé. Aucun débit n\'a été effectué.', true);
   }
 }
 
@@ -1290,7 +1296,7 @@ function openPaymentModal(pack) {
   const notice = $('#payTransferNotice');
   if (notice) notice.hidden = true;
   const btn = $('#btnSubmitPayment');
-  if (btn) { btn.disabled = false; btn.textContent = 'Payer avec PayTech'; }
+  if (btn) { btn.disabled = false; btn.textContent = 'Payer avec PayDunya'; }
   if (state.profile?.telephone) $('#payPhone').value = state.profile.telephone;
   $('#modalPayment').hidden = false;
 }
@@ -1305,7 +1311,7 @@ $$('.payment-method').forEach(pm => pm.addEventListener('click', () => {
     const notice = $('#payTransferNotice');
     if (notice) notice.hidden = !isDirect;
     const btn = $('#btnSubmitPayment');
-    if (btn) btn.textContent = isDirect ? 'Confirmer la commande (Règlement direct)' : 'Payer avec PayTech';
+    if (btn) btn.textContent = isDirect ? 'Confirmer la commande (Règlement direct)' : 'Payer avec PayDunya';
   }
 }));
 
@@ -1356,7 +1362,7 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
       return;
     }
 
-    // PAIEMENT EN LIGNE PAYTECH (Wave / Orange Money / Free Money / Carte Bancaire)
+    // PAIEMENT EN LIGNE PAYDUNYA (Wave / Orange Money / Free Money / Carte Bancaire)
     // 1. Enregistre la commande préliminaire dans Supabase
     const { data: payRow, error: pErr } = await sb.from('payments').insert({
       user_id: state.user.id,
@@ -1377,7 +1383,7 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
       } catch (_) {}
     }
 
-    // 2. Préparation du payload PayTech
+    // 2. Préparation du payload PayDunya
     let targetPaymentCode = 'wave';
     if (provider === 'Orange Money') targetPaymentCode = 'orange_money';
     else if (provider === 'Free Money') targetPaymentCode = 'free_money';
@@ -1396,13 +1402,13 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
       payment_id: payRow?.id || null
     };
 
-    // 3. Appel du relais PayTech (gère Node.js en local et Apache PHP sur Hostinger)
-    let apiEndpoint = '/api/paytech/request-payment';
+    // 3. Appel du relais PayDunya (gère Node.js en local et Apache PHP sur Hostinger)
+    let apiEndpoint = '/api/paydunya/request-payment';
     if (window.location.pathname.endsWith('.php')) {
-      apiEndpoint = 'api/paytech/request-payment.php';
+      apiEndpoint = 'api/paydunya/request-payment.php';
     }
 
-    if (msgEl) msgEl.textContent = 'Connexion à la passerelle PayTech (Wave / OM / CB)…';
+    if (msgEl) msgEl.textContent = 'Connexion à la passerelle PayDunya (Wave / OM / CB)…';
 
     let res = await fetch(apiEndpoint, {
       method: 'POST',
@@ -1412,7 +1418,7 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
 
     // Secours automatique si rewrite Apache non actif
     if (!res || res.status === 404) {
-      res = await fetch('api/paytech/request-payment.php', {
+      res = await fetch('api/paydunya/request-payment.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(reqPayload)
@@ -1422,19 +1428,19 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok || !data.ok) {
-      throw new Error(data.error || 'Échec de l\'initialisation auprès de PayTech.');
+      throw new Error(data.error || 'Échec de l\'initialisation auprès de PayDunya.');
     }
 
-    // Sauvegarde la référence PayTech
+    // Sauvegarde la référence PayDunya
     if (data.ref_command && payRow?.id) {
       await sb.from('payments').update({ reference_externe: data.ref_command }).eq('id', payRow.id);
     }
 
-    // 4. Redirection vers la page de paiement officielle PayTech
+    // 4. Redirection vers la page de paiement officielle PayDunya
     if (data.redirect_url) {
       if (msgEl) {
         msgEl.className = 'msg ok';
-        msgEl.textContent = 'Redirection vers l\'écran de paiement officiel PayTech en cours…';
+        msgEl.textContent = 'Redirection vers l\'écran de paiement officiel PayDunya en cours…';
       }
       btn.textContent = 'Redirection en cours…';
       setTimeout(() => {
@@ -1455,7 +1461,7 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
       if (location.hash === '#/pricing' || location.hash === '#pricing') renderPricing();
     }
   } catch (err) {
-    console.error('[Paiement PayTech] Erreur:', err);
+    console.error('[Paiement PayDunya] Erreur:', err);
     if (msgEl) {
       msgEl.hidden = false;
       msgEl.className = 'msg err';
@@ -1464,7 +1470,7 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
     toast('Échec du paiement : ' + err.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Payer avec PayTech';
+    btn.textContent = 'Payer avec PayDunya';
   }
 });
 

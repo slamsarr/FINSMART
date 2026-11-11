@@ -1,0 +1,11 @@
+﻿{
+  "_commentaire": "Identifiants PayDunya Sénégal (https://developers.paydunya.com)",
+  "master_key": "",
+  "private_key": "",
+  "token": "",
+  "env": "test",
+  "currency": "XOF",
+  "callback_url": "",
+  "return_url": "",
+  "cancel_url": ""
+}

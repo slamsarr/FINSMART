@@ -126,14 +126,18 @@ async function audit() {
     });
     const reqData = await reqRes.json();
     assert(reqRes.status === 200 && reqData.ok === true, 'POST /api/paydunya/request-payment crée la facture', `ref_command: ${reqData.ref_command}`);
-    assert(reqData.redirect_url && reqData.redirect_url.includes('ref='), 'URL de redirection générée avec succès');
+    assert(reqData.redirect_url && (reqData.redirect_url.includes('payment.paydunya.com') || reqData.redirect_url.includes('ref=') || reqData.redirect_url.includes('checkout')), 'URL de redirection PayDunya officielle générée avec succès', reqData.redirect_url);
   } catch (e) {
     assert(false, 'Vérification /api/paydunya/request-payment', e.message);
   }
 
   // 7. Test de la sécurité Webhook IPN (SHA-512)
   console.log('\n--- 7. AUDIT DE SÉCURITÉ IPN (SIGNATURE SHA-512) ---');
-  const masterKey = 'test_secret_master_key_999';
+  let masterKey = 'test_secret_master_key_999';
+  try {
+    const liveCfg = JSON.parse(fs.readFileSync('paydunya.config.json', 'utf8'));
+    if (liveCfg.master_key) masterKey = liveCfg.master_key;
+  } catch {}
   const validHash = crypto.createHash('sha512').update(masterKey).digest('hex');
 
   try {

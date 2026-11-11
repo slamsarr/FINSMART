@@ -464,7 +464,11 @@ async function handleBalanceFile(k, file, upload) {
 }
 function renderBalanceReport(k, p) {
   const t = p.totals || {};
-  const st = p.errors.length ? '<span class="badge bad">À corriger</span>' : p.warnings.length ? '<span class="badge warn">Lue avec remarques</span>' : '<span class="badge ok">Conforme</span>';
+  const st = p.errors.length 
+    ? `<button type="button" class="badge bad btn-fix-balance" data-bal-key="${k}" style="cursor:pointer; border:none; padding:4px 10px; font-size:12px; font-weight:800;" title="Cliquer pour corriger immédiatement les anomalies de la Balance ${k}">⛔ À corriger (cliquer pour réparer ➔)</button>` 
+    : (p.warnings.length 
+      ? `<button type="button" class="badge warn btn-fix-balance" data-bal-key="${k}" style="cursor:pointer; border:none; padding:4px 10px; font-size:12px; font-weight:700;" title="Cliquer pour examiner les remarques">⚠️ Lue avec remarques</button>` 
+      : '<span class="badge ok">Conforme</span>');
   
   // Met à jour et affiche le bouton d'édition rapide
   const btnView = $('#btnBalView' + k);
@@ -473,14 +477,38 @@ function renderBalanceReport(k, p) {
     btnView.textContent = `👁️ Visualiser & Modifier (${p.rows?.length || 0} comptes)`;
   }
 
+  // Erreurs enrichies avec lien direct vers le compte en anomalie
+  const errorsHtml = p.errors.slice(0, 10).map(x => {
+    const m = x.match(/compte\s+([0-9A-Za-z]+)/i);
+    const acc = m ? m[1] : null;
+    return `<li style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; padding:3px 0;">
+      <span>${esc(x)}</span>
+      ${acc 
+        ? `<button type="button" class="btn-goto-account link small" data-bal-key="${k}" data-acc="${acc}" style="font-weight:700; white-space:nowrap; color:#b91c1c;">✏️ Corriger ce compte</button>`
+        : `<button type="button" class="btn-goto-account link small" data-bal-key="${k}" data-filter="errors" style="font-weight:700; white-space:nowrap; color:#b91c1c;">✏️ Équilibrer</button>`}
+    </li>`;
+  }).join('');
+
+  // Remarques SYSCOHADA avec lien direct
+  const warningsHtml = p.warnings.slice(0, 40).map(x => {
+    const m = x.match(/compte\s+([0-9A-Za-z]+)/i);
+    const acc = m ? m[1] : null;
+    return `<li style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; padding:2px 0;">
+      <span>${esc(x)}</span>
+      ${acc ? `<button type="button" class="btn-goto-account link small" data-bal-key="${k}" data-acc="${acc}" style="font-weight:700; white-space:nowrap; color:#b45309;">✏️ Examiner</button>` : ''}
+    </li>`;
+  }).join('');
+
   $('#rep' + k).innerHTML = `${st}
     <dl style="margin-top:8px"><dt>Comptes</dt><dd>${fmt(t.comptes || 0)}</dd>
     <dt>Soldes d'ouverture D / C</dt><dd>${fmt(t.sad || 0)} / ${fmt(t.sac || 0)}</dd>
     <dt>Mouvements D / C</dt><dd>${fmt(t.md || 0)} / ${fmt(t.mc || 0)}</dd></dl>
-    ${p.errors.length ? `<ul class="issues err">${p.errors.slice(0, 8).map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    ${p.warnings.length ? `<details><summary class="small">${p.warnings.length} remarque(s)</summary><ul class="issues warn">${p.warnings.slice(0, 40).map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+    ${p.errors.length ? `<ul class="issues err">${errorsHtml}</ul>` : ''}
+    ${p.warnings.length ? `<details><summary class="small">${p.warnings.length} remarque(s) SYSCOHADA</summary><ul class="issues warn">${warningsHtml}</ul></details>` : ''}
     <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-      <button type="button" class="btn sm outline btn-open-bal" data-bal-key="${k}">🔍 Inspecter & Corriger les ${p.rows?.length || 0} comptes</button>
+      <button type="button" class="btn sm ${p.errors.length ? 'primary' : 'outline'} btn-open-bal" data-bal-key="${k}">
+        ${p.errors.length ? '🛠️ Corriger les anomalies' : '🔍 Inspecter & Corriger les ' + (p.rows?.length || 0) + ' comptes'}
+      </button>
     </div>`;
 }
 $('#btnStep2').addEventListener('click', () => setStep(3));
@@ -503,7 +531,7 @@ let balSearchQuery = '';
 let balCurrentPage = 1;
 const BAL_PAGE_SIZE = 50;
 
-function openBalanceEditor(k) {
+function openBalanceEditor(k, options = {}) {
   currentBalKey = k || 'N';
   const d = state.dossier;
   const parsed = d[currentBalKey === 'N' ? 'balN' : 'balN1'];
@@ -532,21 +560,75 @@ function openBalanceEditor(k) {
     ];
   }
 
-  balFilterMode = 'all';
-  balSearchQuery = '';
+  // Appliquer les options de filtrage ou de recherche ciblée
+  balFilterMode = options.filter || 'all';
+  balSearchQuery = options.search || '';
   balCurrentPage = 1;
+
   const sInput = $('#balSearchInput');
-  if (sInput) sInput.value = '';
+  if (sInput) sInput.value = balSearchQuery;
+
   const saveSt = $('#balSaveStatus');
-  if (saveSt) saveSt.textContent = 'Prêt pour modifications.';
-  $('#btnFilterAll')?.classList.add('active');
-  $('#btnFilterErrors')?.classList.remove('active');
-  $('#btnFilterReclassements')?.classList.remove('active');
+  if (saveSt) {
+    if (options.search) {
+      saveSt.textContent = `🎯 Compte ${options.search} isolé. Corrigez les montants ci-dessous.`;
+    } else if (options.filter === 'errors') {
+      saveSt.textContent = `⚠️ Mode correction : affichage des comptes avec anomalies SYSCOHADA.`;
+    } else if (options.filter === 'reclassement') {
+      saveSt.textContent = `💡 Mode reclassement : comptes 401 débiteurs ou 411 créditeurs.`;
+    } else {
+      saveSt.textContent = 'Prêt pour modifications.';
+    }
+  }
+
+  $('#btnFilterAll')?.classList.toggle('active', balFilterMode === 'all' && !balSearchQuery);
+  $('#btnFilterErrors')?.classList.toggle('active', balFilterMode === 'errors');
+  $('#btnFilterReclassements')?.classList.toggle('active', balFilterMode === 'reclassement');
 
   computeBalanceLiveStats();
   refreshBalEditorTable();
+
   const modal = $('#modalBalanceEditor');
   if (modal) modal.hidden = false;
+
+  // Si un compte spécifique est ciblé : le surligner et placer le curseur dessus
+  const targetAcc = options.focusAccount || options.search;
+  if (targetAcc) {
+    setTimeout(() => {
+      const targetStr = String(targetAcc).trim();
+      const inputEl = document.querySelector(`.bal-table input.acc-input[value="${targetStr}"]`);
+      if (inputEl) {
+        const rowTr = inputEl.closest('tr');
+        if (rowTr) {
+          rowTr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          rowTr.classList.add('bal-row-highlight');
+          setTimeout(() => rowTr.classList.remove('bal-row-highlight'), 4500);
+          const numInp = rowTr.querySelector('input.num-input');
+          if (numInp) {
+            numInp.focus();
+            numInp.select();
+          } else {
+            inputEl.focus();
+          }
+        }
+      }
+    }, 250);
+  } else if (options.filter === 'errors') {
+    // Focaliser la première anomalie
+    setTimeout(() => {
+      const firstErrRow = document.querySelector('.bal-table tr.bal-row-err') || document.querySelector('.bal-table tr.bal-row-warn');
+      if (firstErrRow) {
+        firstErrRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        firstErrRow.classList.add('bal-row-highlight');
+        setTimeout(() => firstErrRow.classList.remove('bal-row-highlight'), 3500);
+        const firstNum = firstErrRow.querySelector('input.num-input');
+        if (firstNum) {
+          firstNum.focus();
+          firstNum.select();
+        }
+      }
+    }, 250);
+  }
 }
 
 function computeBalanceLiveStats() {
@@ -971,13 +1053,58 @@ $('#btnSaveBalanceEdits')?.addEventListener('click', async () => {
   toast(`✅ ${label} enregistrée avec succès (${parsed.rows.length} comptes) !`);
 });
 
-// Écouteur d'ouverture du visualiseur
+// Écouteur global de délégation pour toutes les actions directes de navigation vers correction
 document.addEventListener('click', e => {
-  const btn = e.target.closest('.btn-open-bal, [data-open-editor]');
-  if (!btn) return;
-  e.preventDefault();
-  const k = btn.dataset.balKey || btn.dataset.openEditor || 'N';
-  openBalanceEditor(k);
+  // 1. Bouton "À corriger" / badge d'anomalies de la carte Balance (Étape 2)
+  const fixBalBtn = e.target.closest('.btn-fix-balance');
+  if (fixBalBtn) {
+    e.preventDefault();
+    const k = fixBalBtn.dataset.balKey || 'N';
+    openBalanceEditor(k, { filter: 'errors' });
+    return;
+  }
+
+  // 2. Bouton "Corriger ce compte" individuel dans la liste d'erreurs (Étape 2)
+  const gotoAccBtn = e.target.closest('.btn-goto-account');
+  if (gotoAccBtn) {
+    e.preventDefault();
+    const k = gotoAccBtn.dataset.balKey || 'N';
+    const acc = gotoAccBtn.dataset.acc || '';
+    openBalanceEditor(k, { search: acc, focusAccount: acc });
+    return;
+  }
+
+  // 3. Bouton "Corriger ce compte" individuel dans la table des comptes signalés (Étape 4)
+  const fixAnomBtn = e.target.closest('.btn-fix-anomaly');
+  if (fixAnomBtn) {
+    e.preventDefault();
+    const k = fixAnomBtn.dataset.balKey || 'N';
+    const acc = fixAnomBtn.dataset.acc || '';
+    setStep(2);
+    openBalanceEditor(k, { search: acc, focusAccount: acc });
+    toast(`🎯 Compte ${acc} ciblé pour correction dans la balance ${k}`);
+    return;
+  }
+
+  // 4. Boutons d'action diagnostique (Étape 4 : cartes bloquantes ou badges du tableau de contrôles)
+  const diagBtn = e.target.closest('.btn-diag-action');
+  if (diagBtn) {
+    e.preventDefault();
+    const code = diagBtn.dataset.diagCode;
+    if (code && typeof handleDiagnosticAction === 'function') {
+      handleDiagnosticAction(code);
+    }
+    return;
+  }
+
+  // 5. Bouton d'ouverture simple de l'éditeur de balance
+  const openBalBtn = e.target.closest('.btn-open-bal, [data-open-editor]');
+  if (openBalBtn) {
+    e.preventDefault();
+    const k = openBalBtn.dataset.balKey || openBalBtn.dataset.openEditor || 'N';
+    openBalanceEditor(k);
+    return;
+  }
 });
 
 // ------------------------------------------------------------------ informations complémentaires
@@ -1490,6 +1617,39 @@ const CONTROLS_DIAGNOSTIC = {
   }
 };
 
+function handleDiagnosticAction(code) {
+  const diag = CONTROLS_DIAGNOSTIC[code];
+  if (!diag) {
+    setStep(2);
+    openBalanceEditor('N', { filter: 'errors' });
+    return;
+  }
+  if (diag.step === 3) {
+    setStep(3);
+    setTimeout(() => {
+      const el = document.querySelector('input[data-k="capital_social"], input[data-t="t13"], details[open]');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    toast(`Contrôle ${code} : Complétez la Note 13 (Capital social) à l'Étape 3`);
+    return;
+  }
+
+  // Étape 2 : Balances
+  setStep(2);
+  const balKey = /n-1/i.test(diag.actionLabel || '') || /n1/i.test(code) ? 'N-1' : 'N';
+
+  if (code === 'B4') {
+    openBalanceEditor(balKey, { search: '6', filter: 'errors' });
+    toast(`Balance ${balKey} (${code}) : Remettez à zéro les soldes d'ouverture des comptes de résultat (classes 6, 7, 8)`);
+  } else if (diag.hasAnomalies) {
+    openBalanceEditor(balKey, { filter: 'errors' });
+    toast(`Balance ${balKey} (${code}) : Liste des comptes avec anomalies SYSCOHADA affichée`);
+  } else {
+    openBalanceEditor(balKey, { filter: 'errors' });
+    toast(`Balance ${balKey} (${code}) : Corrigez les soldes ou écritures dans l'éditeur`);
+  }
+}
+
 function renderResult(r, fresh) {
   const d = state.dossier;
   const isLimited = (d.exercise?.generation_type === 'free' && !d.exercise?.is_full_version) || !!r.isLimited;
@@ -1544,8 +1704,8 @@ function renderResult(r, fresh) {
                 <p><strong>Où et comment corriger :</strong> <span style="color:#991b1b; font-weight:600;">[${esc(diag.cible)}]</span> ${esc(diag.solution)}</p>
               </div>
               <div class="diag-card-foot">
-                <button class="btn sm gold" data-step-go="${diag.step}">✏️ ${esc(diag.actionLabel)}</button>
-                ${diag.hasAnomalies && an.length ? `<button class="btn sm ghost" data-open-anomalies="true">🔍 Voir les comptes signalés (${an.length})</button>` : ''}
+                <button type="button" class="btn sm gold btn-diag-action" data-diag-code="${esc(c.code)}">✏️ ${esc(diag.actionLabel)}</button>
+                ${diag.hasAnomalies && an.length ? `<button type="button" class="btn sm ghost" data-open-anomalies="true">🔍 Voir les comptes signalés (${an.length})</button>` : ''}
               </div>
             </div>`;
           }).join('')}
@@ -1599,7 +1759,7 @@ function renderResult(r, fresh) {
       </td>
       <td class="num">${esc(typeof c.n === 'number' ? fmt(c.n) : c.n ?? '')}</td>
       <td class="num">${esc(typeof c.n1 === 'number' ? fmt(c.n1) : c.n1 ?? '')}</td>
-      <td>${isOk ? '<span class="badge ok">OK</span>' : `<span class="badge ${isBloquant ? 'bad' : 'warn'}" style="font-weight:700;">${isBloquant ? '⛔ À corriger' : '⚠️ À vérifier'}</span>`}</td>
+      <td>${isOk ? '<span class="badge ok">OK</span>' : `<button type="button" class="badge ${isBloquant ? 'bad' : 'warn'} btn-diag-action" data-diag-code="${esc(c.code)}" style="font-weight:700; cursor:pointer; border:none; padding:4px 9px; font-size:12px; border-radius:4px; display:inline-flex; align-items:center; gap:4px;" title="Cliquer pour aller directement corriger">${isBloquant ? '⛔ À corriger ➜' : '⚠️ À vérifier ➜'}</button>`}</td>
     </tr>`;
   }).join('');
 
@@ -1636,9 +1796,33 @@ function renderResult(r, fresh) {
     </div>
     
     <div class="table-wrap"><table class="table" id="tableControls"><thead><tr><th>N°</th><th>Contrôle</th><th>N</th><th>N-1</th><th>Statut</th></tr></thead><tbody>${ctl}</tbody></table></div>
-    ${an.length ? `<details style="margin-top:14px" id="detailsAnomalies"><summary><span>${r.nbAnomalies || an.length} compte(s) signalé(s) dans les balances</span></summary>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Balance</th><th>Compte</th><th>Intitulé</th><th>Solde</th><th>Observation</th></tr></thead><tbody>
-      ${an.map(a => `<tr><td>${esc(a.balance)}</td><td>${esc(a.compte)}</td><td>${esc(a.intitule)}</td><td class="num">${fmt(a.solde)}</td><td>${esc(a.messages.join(' ; '))}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    ${an.length ? `<details style="margin-top:14px" id="detailsAnomalies" open><summary><span>⚠️ ${r.nbAnomalies || an.length} compte(s) signalé(s) dans les balances (SYSCOHADA)</span></summary>
+      <div class="table-wrap"><table class="table">
+        <thead>
+          <tr>
+            <th>Balance</th>
+            <th>Compte</th>
+            <th>Intitulé</th>
+            <th style="text-align:right;">Solde</th>
+            <th>Observation SYSCOHADA</th>
+            <th style="text-align:center; width:160px;">Action directe</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${an.map(a => `<tr>
+            <td><span class="badge neutral" style="font-weight:700;">${esc(a.balance || 'N')}</span></td>
+            <td><strong>${esc(a.compte)}</strong></td>
+            <td>${esc(a.intitule)}</td>
+            <td class="num font-mono">${fmt(a.solde)}</td>
+            <td><span style="color:#b91c1c; font-weight:500;">${esc(Array.isArray(a.messages) ? a.messages.join(' ; ') : (a.message || ''))}</span></td>
+            <td style="text-align:center;">
+              <button type="button" class="btn sm gold btn-fix-anomaly" data-bal-key="${esc(a.balance || 'N')}" data-acc="${esc(a.compte)}" title="Ouvrir l'éditeur directement sur ce compte">
+                ✏️ Corriger ce compte
+              </button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div></details>` : ''}
     <p class="small muted" style="margin-top:14px">Le fichier reprend le modèle officiel <em>modele_etats_financiers_DGID (Nouveau)</em> : onglets inchangés, valeurs uniquement (aucune formule). Rappel : visa de l'expert-comptable ou du commissaire aux comptes requis pour le dépôt sur Sen-etafi.</p>`;
 
   // Écouteurs de téléchargement et déblocage

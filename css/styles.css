@@ -437,6 +437,24 @@ details .inner { padding: 4px 16px 16px; }
 .bal-table tr.bal-row-rec td {
   background: #f8fafc !important;
 }
+@keyframes balRowPulse {
+  0% { background-color: #fef08a !important; }
+  50% { background-color: #fde047 !important; }
+  100% { background-color: #fef08a !important; }
+}
+.bal-table tr.bal-row-highlight td {
+  animation: balRowPulse 1s ease-in-out infinite alternate;
+  border-top: 2px solid #ca8a04 !important;
+  border-bottom: 2px solid #ca8a04 !important;
+}
+.btn-fix-balance {
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+}
+.btn-fix-balance:hover {
+  transform: scale(1.03);
+  box-shadow: 0 2px 6px rgba(185, 28, 28, 0.25);
+}
 
 /* Badges SYSCOHADA */
 .bal-sys-badge {

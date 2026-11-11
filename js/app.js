@@ -1,6 +1,6 @@
 /* FINSMART – Application de collecte des balances et de génération de la liasse DGID */
 import { SUPABASE_URL, SUPABASE_KEY, BRAND } from './config.js';
-import { parseBalance, INFO_SECTIONS, INFO_TABLES, INFO_EXTRA, EFFECTIFS, nomFichier, fmt, BALANCE_COLUMNS } from './liasse.js';
+import { parseBalance, checkSyscohadaRules, INFO_SECTIONS, INFO_TABLES, INFO_EXTRA, EFFECTIFS, nomFichier, fmt, BALANCE_COLUMNS } from './liasse.js';
 import { fillModele } from './xlsx-filler.js';
 
 const sb = window.__SB_MOCK__ ? window.__SB_MOCK__() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -539,6 +539,9 @@ function openBalanceEditor(k) {
   if (sInput) sInput.value = '';
   const saveSt = $('#balSaveStatus');
   if (saveSt) saveSt.textContent = 'Prêt pour modifications.';
+  $('#btnFilterAll')?.classList.add('active');
+  $('#btnFilterErrors')?.classList.remove('active');
+  $('#btnFilterReclassements')?.classList.remove('active');
 
   computeBalanceLiveStats();
   refreshBalEditorTable();
@@ -547,29 +550,22 @@ function openBalanceEditor(k) {
 }
 
 function computeBalanceLiveStats() {
-  let sadTot = 0, sacTot = 0, mdTot = 0, mcTot = 0;
-  let clDebTot = 0, clCdtTot = 0;
-  let abnormalRows = 0;
+  const label = currentBalKey === 'N' ? 'Balance N' : 'Balance N-1';
+  const sysCheck = checkSyscohadaRules(currentBalRows, label);
+  const { errors, warnings, sysAlerts, rowAlertsMap, totals } = sysCheck;
+
+  let errCount = 0;
+  let recCount = 0;
 
   currentBalRows.forEach(r => {
-    const sD = Number(r.sad) || 0;
-    const sC = Number(r.sac) || 0;
-    const mD = Number(r.md) || 0;
-    const mC = Number(r.mc) || 0;
-
-    sadTot += sD;
-    sacTot += sC;
-    mdTot += mD;
-    mcTot += mC;
-
-    const netCloture = (sD - sC) + (mD - mC);
-    if (netCloture > 0) clDebTot += netCloture;
-    else if (netCloture < 0) clCdtTot += Math.abs(netCloture);
-
-    const accStr = String(r.acc || '').trim();
-    const hasErr = !/^\d{2,}$/.test(accStr) || !String(r.lib || '').trim() || sD < 0 || sC < 0 || mD < 0 || mC < 0;
-    r.hasErr = hasErr;
-    if (hasErr) abnormalRows++;
+    const accStr = String(r.acc || '').trim().replace(/\s/g, '');
+    const alerts = rowAlertsMap.get(accStr) || [];
+    r.sysAlerts = alerts;
+    r.hasErr = alerts.some(a => a.type === 'error');
+    r.hasWarn = alerts.some(a => a.type === 'warning');
+    r.hasReclassement = alerts.some(a => a.type === 'reclassement');
+    if (r.hasErr || r.hasWarn) errCount++;
+    if (r.hasReclassement) recCount++;
   });
 
   const count = currentBalRows.length;
@@ -579,56 +575,77 @@ function computeBalanceLiveStats() {
   if (modalBadge) modalBadge.textContent = `${count} compte${count > 1 ? 's' : ''}`;
 
   const kpiSadSac = $('#balKpiSadSac');
-  if (kpiSadSac) kpiSadSac.textContent = `${fmt(sadTot)} / ${fmt(sacTot)}`;
+  if (kpiSadSac) kpiSadSac.textContent = `${fmt(totals.sad)} / ${fmt(totals.sac)}`;
   const kpiMdMc = $('#balKpiMdMc');
-  if (kpiMdMc) kpiMdMc.textContent = `${fmt(mdTot)} / ${fmt(mcTot)}`;
+  if (kpiMdMc) kpiMdMc.textContent = `${fmt(totals.md)} / ${fmt(totals.mc)}`;
   const kpiCloture = $('#balKpiCloture');
-  if (kpiCloture) kpiCloture.textContent = `${fmt(clDebTot)} D / ${fmt(clCdtTot)} C`;
-
-  const ecartOuv = Math.round(sadTot - sacTot);
-  const ecartMvt = Math.round(mdTot - mcTot);
+  if (kpiCloture) kpiCloture.textContent = `${fmt(totals.clDebTot)} D / ${fmt(totals.clCdtTot)} C`;
 
   const pillOuv = $('#balPillOuv');
   if (pillOuv) {
-    if (Math.abs(ecartOuv) < 1) {
+    if (Math.abs(totals.ecartOuv) < 1) {
       pillOuv.className = 'bal-kpi-pill ok';
       pillOuv.textContent = 'Équilibré (0 FCFA)';
     } else {
       pillOuv.className = 'bal-kpi-pill bad';
-      pillOuv.textContent = `Écart : ${fmt(ecartOuv)} FCFA`;
+      pillOuv.textContent = `Écart : ${fmt(totals.ecartOuv)} FCFA`;
     }
   }
 
   const pillMvt = $('#balPillMvt');
   if (pillMvt) {
-    if (Math.abs(ecartMvt) < 1) {
+    if (Math.abs(totals.ecartMvt) < 1) {
       pillMvt.className = 'bal-kpi-pill ok';
       pillMvt.textContent = 'Équilibré (0 FCFA)';
     } else {
       pillMvt.className = 'bal-kpi-pill bad';
-      pillMvt.textContent = `Écart : ${fmt(ecartMvt)} FCFA`;
+      pillMvt.textContent = `Écart : ${fmt(totals.ecartMvt)} FCFA`;
     }
   }
 
+  // Mettre à jour les compteurs des boutons de filtres
+  const errBadge = $('#balErrBadgeCount');
+  if (errBadge) errBadge.textContent = String(errCount);
+  const recBadge = $('#balRecBadgeCount');
+  if (recBadge) recBadge.textContent = String(recCount);
+
+  // Rendu du bandeau d'alertes SYSCOHADA (AUDCIF)
   const alertBox = $('#balAlertsBox');
   if (alertBox) {
     const issues = [];
-    if (Math.abs(ecartOuv) >= 1) {
-      issues.push(`⚠️ Soldes d'ouverture déséquilibrés : Débit – Crédit = <b>${fmt(ecartOuv)} FCFA</b>.`);
+    if (Math.abs(totals.ecartOuv) >= 1) {
+      issues.push(`🔴 <b>[SYSCOHADA AUDCIF Art. 34]</b> Déséquilibre d'ouverture : Débit – Crédit = <b>${fmt(totals.ecartOuv)} FCFA</b> (stricte égalité requise).`);
     }
-    if (Math.abs(ecartMvt) >= 1) {
-      issues.push(`⚠️ Mouvements de période déséquilibrés : Débit – Crédit = <b>${fmt(ecartMvt)} FCFA</b>.`);
+    if (Math.abs(totals.ecartMvt) >= 1) {
+      issues.push(`🔴 <b>[SYSCOHADA AUDCIF Art. 17]</b> Principe de la partie double non respecté : Mouvements Débit – Crédit = <b>${fmt(totals.ecartMvt)} FCFA</b>.`);
     }
-    if (abnormalRows > 0) {
-      issues.push(`⚠️ ${abnormalRows} compte(s) avec numéro manquant ou montant négatif.`);
+    const caisseErrs = sysAlerts.filter(a => a.code === 'CAISSE_CREDITRICE');
+    if (caisseErrs.length) {
+      issues.push(`🔴 <b>[SYSCOHADA Compte 57 - Caisse]</b> ${caisseErrs.length} compte(s) de caisse avec solde créditeur INTERDIT.`);
+    }
+    const soustrErrs = sysAlerts.filter(a => a.code === 'SOUSTRACTIF_DEBITEUR');
+    if (soustrErrs.length) {
+      issues.push(`⚠️ <b>[SYSCOHADA Comptes Soustractifs]</b> ${soustrErrs.length} compte(s) d'amortissements/dépréciations à solde débiteur anormal.`);
+    }
+    if (recCount > 0) {
+      issues.push(`💡 <b>[SYSCOHADA AUDCIF Art. 34 - Non-compensation]</b> ${recCount} compte(s) de tiers (fournisseurs débiteurs ou clients créditeurs) à reclasser en 409 ou 419.`);
     }
 
     if (issues.length) {
       alertBox.hidden = false;
-      alertBox.innerHTML = `<div class="status-banner bad" style="margin:0; padding:10px 14px; font-size:13px;"><div>${issues.join('<br>')}</div></div>`;
+      const isBad = Math.abs(totals.ecartOuv) >= 1 || Math.abs(totals.ecartMvt) >= 1 || caisseErrs.length > 0;
+      alertBox.innerHTML = `
+        <div class="status-banner ${isBad ? 'bad' : 'warn'}" style="margin:0; padding:8px 14px; font-size:12.5px; line-height:1.45;">
+          <div>${issues.join('<br>')}</div>
+        </div>
+      `;
     } else {
       alertBox.hidden = false;
-      alertBox.innerHTML = `<div class="status-banner ok" style="margin:0; padding:8px 14px; font-size:13px;"><div>✅ <b>Balance équilibrée et conforme.</b> Prête pour le calcul officiel des liasses DGID.</div></div>`;
+      alertBox.innerHTML = `
+        <div class="status-banner ok" style="margin:0; padding:7px 14px; font-size:12.5px;">
+          <div>✅ <b>Balance 100% conforme aux normes SYSCOHADA révisé (AUDCIF).</b> Équilibre rigoureux des ouvertures (Art. 34) et des mouvements (Art. 17).</div>
+        </div>
+      `;
     }
   }
 }
@@ -640,7 +657,9 @@ function getFilteredBalRows() {
     list = list.filter(r => String(r.acc || '').toLowerCase().includes(q) || String(r.lib || '').toLowerCase().includes(q));
   }
   if (balFilterMode === 'errors') {
-    list = list.filter(r => r.hasErr);
+    list = list.filter(r => r.hasErr || r.hasWarn);
+  } else if (balFilterMode === 'reclassement') {
+    list = list.filter(r => r.hasReclassement);
   }
   return list;
 }
@@ -659,11 +678,14 @@ function refreshBalEditorTable() {
   if (!tbody) return;
 
   if (!pageRows.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:32px 16px; color:var(--muted);">Aucun compte ne correspond à votre recherche ou filtre.<br><button type="button" class="btn sm outline" id="btnResetBalSearch" style="margin-top:10px;">Réinitialiser les filtres</button></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:28px 16px; color:var(--muted);">Aucun compte ne correspond à votre recherche ou filtre.<br><button type="button" class="btn sm outline" id="btnResetBalSearch" style="margin-top:10px;">Afficher tous les comptes</button></td></tr>`;
     $('#btnResetBalSearch')?.addEventListener('click', () => {
       balSearchQuery = '';
       balFilterMode = 'all';
       if ($('#balSearchInput')) $('#balSearchInput').value = '';
+      $('#btnFilterAll')?.classList.add('active');
+      $('#btnFilterErrors')?.classList.remove('active');
+      $('#btnFilterReclassements')?.classList.remove('active');
       refreshBalEditorTable();
     });
   } else {
@@ -677,16 +699,30 @@ function refreshBalEditorTable() {
       const clotureTxt = cloture > 0 ? `${fmt(cloture)} D` : (cloture < 0 ? `${fmt(Math.abs(cloture))} C` : '0');
       const clotureColor = cloture > 0 ? '#15803d' : (cloture < 0 ? '#b45309' : 'var(--muted)');
 
+      let rowClass = '';
+      if (r.hasErr) rowClass = 'bal-row-err';
+      else if (r.hasWarn) rowClass = 'bal-row-warn';
+      else if (r.hasReclassement) rowClass = 'bal-row-rec';
+
+      let diagBadgeHtml = '<span class="bal-sys-badge ok" title="Conforme SYSCOHADA révisé">✅ Conforme</span>';
+      if (r.sysAlerts && r.sysAlerts.length) {
+        diagBadgeHtml = r.sysAlerts.map(a => {
+          const cls = a.type === 'error' ? 'err' : (a.type === 'reclassement' ? 'rec' : 'warn');
+          return `<span class="bal-sys-badge ${cls}" title="${esc(a.message)}">${esc(a.badgeText)}</span>`;
+        }).join(' ');
+      }
+
       rowsHtml += `
-        <tr data-row-id="${r.id}" class="${r.hasErr ? 'bal-row-err' : ''}">
-          <td style="text-align:center; color:var(--muted); font-size:12.5px; font-weight:600;">${start + idx + 1}</td>
+        <tr data-row-id="${r.id}" class="${rowClass}">
+          <td style="text-align:center; color:var(--muted); font-size:12px; font-weight:600;">${start + idx + 1}</td>
           <td><input type="text" class="acc-input" data-id="${r.id}" data-col="acc" value="${esc(r.acc)}" placeholder="ex. 411100"></td>
           <td><input type="text" class="lib-input" data-id="${r.id}" data-col="lib" value="${esc(r.lib)}" placeholder="Intitulé du compte"></td>
-          <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="sad" value="${r.sad !== 0 && r.sad !== null && r.sad !== undefined ? r.sad : ''}" placeholder="0"></td>
-          <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="sac" value="${r.sac !== 0 && r.sac !== null && r.sac !== undefined ? r.sac : ''}" placeholder="0"></td>
-          <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="md" value="${r.md !== 0 && r.md !== null && r.md !== undefined ? r.md : ''}" placeholder="0"></td>
-          <td><input type="number" step="any" min="0" class="num-input" data-id="${r.id}" data-col="mc" value="${r.mc !== 0 && r.mc !== null && r.mc !== undefined ? r.mc : ''}" placeholder="0"></td>
+          <td><input type="number" step="any" class="num-input" data-id="${r.id}" data-col="sad" value="${r.sad !== 0 && r.sad !== null && r.sad !== undefined ? r.sad : ''}" placeholder="0"></td>
+          <td><input type="number" step="any" class="num-input" data-id="${r.id}" data-col="sac" value="${r.sac !== 0 && r.sac !== null && r.sac !== undefined ? r.sac : ''}" placeholder="0"></td>
+          <td><input type="number" step="any" class="num-input" data-id="${r.id}" data-col="md" value="${r.md !== 0 && r.md !== null && r.md !== undefined ? r.md : ''}" placeholder="0"></td>
+          <td><input type="number" step="any" class="num-input" data-id="${r.id}" data-col="mc" value="${r.mc !== 0 && r.mc !== null && r.mc !== undefined ? r.mc : ''}" placeholder="0"></td>
           <td class="th-num cloture-cell" id="cloture-${r.id}" style="color:${clotureColor};">${clotureTxt}</td>
+          <td class="diag-cell">${diagBadgeHtml}</td>
           <td style="text-align:center;"><button type="button" class="btn-del-row" data-del-id="${r.id}" title="Supprimer ce compte">🗑️</button></td>
         </tr>
       `;
@@ -738,6 +774,24 @@ document.addEventListener('input', e => {
   }
 
   computeBalanceLiveStats();
+
+  // Met à jour la cellule diagnostic de la ligne modifiée en direct
+  const rowTr = el.closest('tr');
+  if (rowTr) {
+    const diagCell = rowTr.querySelector('.diag-cell');
+    if (diagCell) {
+      if (row.sysAlerts && row.sysAlerts.length) {
+        diagCell.innerHTML = row.sysAlerts.map(a => {
+          const cls = a.type === 'error' ? 'err' : (a.type === 'reclassement' ? 'rec' : 'warn');
+          return `<span class="bal-sys-badge ${cls}" title="${esc(a.message)}">${esc(a.badgeText)}</span>`;
+        }).join(' ');
+      } else {
+        diagCell.innerHTML = '<span class="bal-sys-badge ok" title="Conforme SYSCOHADA révisé">✅ Conforme</span>';
+      }
+    }
+    rowTr.className = row.hasErr ? 'bal-row-err' : (row.hasWarn ? 'bal-row-warn' : (row.hasReclassement ? 'bal-row-rec' : ''));
+  }
+
   const st = $('#balSaveStatus');
   if (st) st.textContent = '⚠️ Modifications non enregistrées…';
 });
@@ -790,11 +844,25 @@ $('#balSearchInput')?.addEventListener('input', e => {
 $('#btnFilterErrors')?.addEventListener('click', () => {
   balFilterMode = 'errors';
   balCurrentPage = 1;
+  $('#btnFilterErrors')?.classList.add('active');
+  $('#btnFilterAll')?.classList.remove('active');
+  $('#btnFilterReclassements')?.classList.remove('active');
+  refreshBalEditorTable();
+});
+$('#btnFilterReclassements')?.addEventListener('click', () => {
+  balFilterMode = 'reclassement';
+  balCurrentPage = 1;
+  $('#btnFilterReclassements')?.classList.add('active');
+  $('#btnFilterAll')?.classList.remove('active');
+  $('#btnFilterErrors')?.classList.remove('active');
   refreshBalEditorTable();
 });
 $('#btnFilterAll')?.addEventListener('click', () => {
   balFilterMode = 'all';
   balCurrentPage = 1;
+  $('#btnFilterAll')?.classList.add('active');
+  $('#btnFilterErrors')?.classList.remove('active');
+  $('#btnFilterReclassements')?.classList.remove('active');
   refreshBalEditorTable();
 });
 
@@ -1252,38 +1320,43 @@ const CONTROLS_DIAGNOSTIC = {
   A1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    cause: 'Le total des débits d\'ouverture n\'est pas égal au total des crédits d\'ouverture (déséquilibre au 01/01).',
-    solution: 'Vérifiez le journal des à-nouveaux dans votre logiciel comptable pour équilibrer les débits et crédits d\'ouverture, puis réimportez la balance N à l\'étape 2.',
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Équilibre du Bilan d\'Ouverture)',
+    cause: 'Le total des débits d\'ouverture n\'est pas égal au total des crédits d\'ouverture (déséquilibre au 01/01). Selon l\'Art. 34 AUDCIF, le bilan d\'ouverture doit être rigoureusement équilibré.',
+    solution: 'Vérifiez le journal des à-nouveaux dans votre logiciel comptable pour équilibrer les débits et crédits d\'ouverture, ou corrigez directement via l\'éditeur de balance à l\'Étape 2.',
     actionLabel: 'Corriger la Balance N (Étape 2)',
     hasAnomalies: false,
   },
   A2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    cause: 'Le total des mouvements débits de la période est différent du total des mouvements crédits.',
-    solution: 'Votre balance générale comporte des écritures déséquilibrées. Corrigez-les dans votre logiciel et rechargez la balance à l\'étape 2.',
-    actionLabel: 'Recharger la Balance N (Étape 2)',
+    norme: 'SYSCOHADA AUDCIF Art. 17 (Principe Fondamental de la Partie Double)',
+    cause: 'Le total des mouvements débits de la période est différent du total des mouvements crédits. En SYSCOHADA révisé (Art. 17), tout débit exige obligatoirement une contrepartie exacte au crédit.',
+    solution: 'Votre balance générale comporte des écritures déséquilibrées. Corrigez-les dans l\'éditeur interactif ou rechargez la balance à l\'étape 2.',
+    actionLabel: 'Examiner & Corriger la Balance N (Étape 2)',
     hasAnomalies: false,
   },
   A3: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    cause: 'La somme algébrique des soldes nets de clôture n\'est pas nulle (Débit clôture ≠ Crédit clôture).',
-    solution: 'La balance de clôture est déséquilibrée. Vérifiez vos cumuls et réimportez la balance équilibrée à l\'étape 2.',
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Équilibre Bilanciel de Clôture)',
+    cause: 'La somme algébrique des soldes nets de clôture n\'est pas nulle (Total Débits clôture ≠ Total Crédits clôture).',
+    solution: 'La balance de clôture est déséquilibrée. Vérifiez vos cumuls et corrigez les soldes dans l\'éditeur interactif à l\'étape 2.',
     actionLabel: 'Corriger la Balance N (Étape 2)',
     hasAnomalies: false,
   },
   B1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    cause: 'Présence de comptes obsolètes de l\'ancien plan comptable ou inexistants dans le SYSCOHADA Révisé (ex. racines 20, 74, 76, classe 9).',
-    solution: 'Reclassez ces comptes vers les racines SYSCOHADA Révisé autorisées (ex. 74/76 reclassés en 70/75/77). Consultez le tableau des comptes signalés ci-dessous pour les identifier.',
+    norme: 'SYSCOHADA Révisé (Nomenclature Officielle des Comptes)',
+    cause: 'Présence de comptes obsolètes de l\'ancien plan comptable ou supprimés dans le SYSCOHADA Révisé (ex. racines 20 Frais d\'établissement, 74, 76, classe 9 analytique).',
+    solution: 'Reclassez ces comptes vers les racines SYSCOHADA Révisé autorisées (ex. racine 20 en charges classe 6 ; 74/76 reclassés en 70/75/77). Consultez le tableau des comptes signalés ci-dessous pour les identifier.',
     actionLabel: 'Voir les comptes & corriger à l\'Étape 2',
     hasAnomalies: true,
   },
   B2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA DGID (Table Officielle de Correspondance Sen-etafi)',
     cause: 'Des comptes à 6 chiffres ne figurent pas dans la table de correspondance officielle DGID.',
     solution: 'Vérifiez les numéros de comptes signalés dans la liste ci-dessous et alignez-les sur le plan de comptes officiel.',
     actionLabel: 'Voir les comptes non classés',
@@ -1292,14 +1365,16 @@ const CONTROLS_DIAGNOSTIC = {
   B4: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    cause: 'Des comptes de gestion (charges classe 6, produits classe 7 ou 8) comportent un solde d\'ouverture au 01/01.',
-    solution: 'En normes SYSCOHADA, les comptes de gestion doivent être soldés à l\'ouverture. Dans votre balance N, mettez à zéro les soldes d\'ouverture des classes 6, 7 et 8.',
-    actionLabel: 'Modifier les soldes d\'ouverture (Étape 2)',
+    norme: 'SYSCOHADA (Règle d\'Apurement des Comptes de Gestion)',
+    cause: 'Des comptes de gestion (charges classe 6, produits classe 7 ou 8) comportent un solde d\'ouverture au 01/01. En SYSCOHADA, les comptes de résultat doivent être obligatoirement soldés à l\'ouverture.',
+    solution: 'En normes SYSCOHADA, mettez à zéro les soldes d\'ouverture des classes 6, 7 et 8 dans la balance N via l\'éditeur interactif.',
+    actionLabel: 'Mettre à zéro l\'ouverture des classes 6/7/8 (Étape 2)',
     hasAnomalies: true,
   },
   C1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA AUDCIF Art. 30 à 33 (Concordance du Résultat Net)',
     cause: 'Le résultat net dégagé par la balance (Produits - Charges) est différent du résultat net calculé au Compte de Résultat.',
     solution: 'Vérifiez la concordance de vos comptes de charges et produits ainsi que les écritures d\'inventaire.',
     actionLabel: 'Vérifier la balance (Étape 2)',
@@ -1308,6 +1383,7 @@ const CONTROLS_DIAGNOSTIC = {
   C2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Égalité Fondamentale Actif = Passif)',
     cause: 'Le total de l\'Actif du Bilan n\'est pas égal au total du Passif (Bilan déséquilibré).',
     solution: 'Vérifiez que le résultat net de l\'exercice est correctement rattaché aux capitaux propres (compte 13) au passif et que les amortissements/dépréciations sont bien au crédit.',
     actionLabel: 'Vérifier les comptes de bilan (Étape 2)',
@@ -1316,7 +1392,8 @@ const CONTROLS_DIAGNOSTIC = {
   C3: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    cause: 'La variation de trésorerie issue du Tableau des Flux (TFT) ne correspond pas à la trésorerie nette au Bilan.',
+    norme: 'SYSCOHADA (Rapprochement Tableau des Flux de Trésorerie TFT)',
+    cause: 'La variation de trésorerie issue du Tableau des Flux (TFT) ne correspond pas à la trésorerie nette au Bilan (52 Banque + 57 Caisse - 56 Découverts).',
     solution: 'Vérifiez les variations des comptes de disponibilités (52 Banque, 57 Caisse) et de concours bancaires (56 Découverts).',
     actionLabel: 'Vérifier la trésorerie (Étape 2)',
     hasAnomalies: false,
@@ -1324,14 +1401,16 @@ const CONTROLS_DIAGNOSTIC = {
   C4: {
     cible: 'Étape 2 (Balances)',
     step: 2,
-    cause: 'Incohérence dans les cumuls des soldes intermédiaires de gestion du Compte de Résultat.',
-    solution: 'Vérifiez les totaux de la cascade de résultat (Marge, Valeur Ajoutée, EBE, Résultat d\'Exploitation).',
+    norme: 'SYSCOHADA (Cascade des Soldes Intermédiaires de Gestion SIG)',
+    cause: 'Incohérence dans les cumuls des soldes intermédiaires de gestion du Compte de Résultat (Marge, Valeur Ajoutée, EBE, Résultat d\'Exploitation).',
+    solution: 'Vérifiez les totaux de la cascade de résultat (Marge brute, Valeur Ajoutée, EBE, Résultat d\'Exploitation).',
     actionLabel: 'Vérifier le compte de résultat',
     hasAnomalies: false,
   },
   D1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Capitaux Propres)',
     cause: 'L\'ouverture N des Capitaux Propres (classe 1) ne concorde pas avec la clôture N-1 majorée du résultat N-1.',
     solution: 'Vérifiez que l\'affectation du résultat N-1 a bien été enregistrée et que la balance N-1 chargée correspond bien à l\'exercice précédent arrêté.',
     actionLabel: 'Vérifier les capitaux propres (Étape 2)',
@@ -1340,6 +1419,7 @@ const CONTROLS_DIAGNOSTIC = {
   D2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Immobilisations)',
     cause: 'L\'ouverture N des Immobilisations (classe 2) ne concorde pas avec la clôture N-1.',
     solution: 'Les valeurs brutes d\'immobilisations au 01/01/N doivent être strictement identiques à celles au 31/12/N-1.',
     actionLabel: 'Vérifier la classe 2 (Étape 2)',
@@ -1348,6 +1428,7 @@ const CONTROLS_DIAGNOSTIC = {
   D3: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Stocks)',
     cause: 'L\'ouverture N des Stocks (classe 3) ne concorde pas avec la clôture N-1.',
     solution: 'Le stock initial au 01/01/N doit être rigoureusement identique au stock final au 31/12/N-1.',
     actionLabel: 'Vérifier les stocks (Étape 2)',
@@ -1356,6 +1437,7 @@ const CONTROLS_DIAGNOSTIC = {
   D4: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Tiers)',
     cause: 'L\'ouverture N des Créances et Dettes circulantes (classe 4) ne concorde pas avec la clôture N-1.',
     solution: 'Vérifiez les reports des comptes de tiers (clients, fournisseurs, personnel, organismes sociaux, État).',
     actionLabel: 'Vérifier la classe 4 (Étape 2)',
@@ -1364,6 +1446,7 @@ const CONTROLS_DIAGNOSTIC = {
   D5: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA AUDCIF Art. 34 (Intangibilité Bilan d\'Ouverture - Trésorerie)',
     cause: 'L\'ouverture N des comptes de Trésorerie (classe 5) ne concorde pas avec la clôture N-1.',
     solution: 'Les soldes d\'ouverture de banque et caisse au 01/01/N doivent être exactement égaux aux soldes de clôture N-1.',
     actionLabel: 'Vérifier la classe 5 (Étape 2)',
@@ -1372,6 +1455,7 @@ const CONTROLS_DIAGNOSTIC = {
   E7: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA AUDCIF Art. 42 (Plafond Légal des Amortissements)',
     cause: 'Les amortissements cumulés (classe 28) dépassent la valeur brute de l\'immobilisation correspondante.',
     solution: 'Ajustez les dotations aux amortissements ou constatez la sortie des immobilisations totalement amorties ou cédées.',
     actionLabel: 'Vérifier les amortissements (Étape 2)',
@@ -1380,6 +1464,7 @@ const CONTROLS_DIAGNOSTIC = {
   E8: {
     cible: 'Étape 3 (Informations)',
     step: 3,
+    norme: 'SYSCOHADA Note Annexe 13 (Rapprochement du Capital Social)',
     cause: 'Le capital social saisi dans la Note 13 ne concorde pas avec le compte 101 du Bilan.',
     solution: 'Rendez-vous à l\'Étape 3 (Informations) pour renseigner le tableau du Capital social (Note 13) avec un montant identique au Bilan.',
     actionLabel: 'Remplir la Note 13 (Étape 3)',
@@ -1388,6 +1473,7 @@ const CONTROLS_DIAGNOSTIC = {
   F1: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA (Structure & Format de Balance Générale)',
     cause: 'Anomalie de format dans le fichier de balance (numéro de compte absent ou textuel, doublons de comptes, ligne de total collée).',
     solution: 'Rendez-vous à l\'Étape 2 et vérifiez que votre balance respecte le modèle 6 colonnes (sans lignes de sous-totaux dans les données).',
     actionLabel: 'Recharger la balance (Étape 2)',
@@ -1396,6 +1482,7 @@ const CONTROLS_DIAGNOSTIC = {
   F2: {
     cible: 'Étape 2 (Balances)',
     step: 2,
+    norme: 'SYSCOHADA (Capacité & Exhaustivité des Comptes)',
     cause: 'La balance dépasse 5 000 lignes ou l\'en-tête de total a été altéré.',
     solution: 'Vérifiez la taille et les en-têtes de votre fichier de balance à l\'Étape 2.',
     actionLabel: 'Vérifier le fichier (Étape 2)',
@@ -1452,6 +1539,7 @@ function renderResult(r, fresh) {
                 <span class="diag-ecart">${esc(ecartTxt)}</span>
               </div>
               <div class="diag-card-body">
+                ${diag.norme ? `<p style="margin:2px 0 6px 0;"><span class="badge neutral" style="font-weight:700; color:#1e3a8a; background:#eff6ff; border:1px solid #bfdbfe;">📜 ${esc(diag.norme)}</span></p>` : ''}
                 <p><strong>Cause :</strong> ${esc(diag.cause)}</p>
                 <p><strong>Où et comment corriger :</strong> <span style="color:#991b1b; font-weight:600;">[${esc(diag.cible)}]</span> ${esc(diag.solution)}</p>
               </div>

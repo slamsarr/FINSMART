@@ -229,137 +229,190 @@ details .inner { padding: 4px 16px 16px; }
 .table tr.tr-vigilance-err td:first-child { border-left: 4px solid #f59e0b; }
 .ctl-guide-note { font-size: 11.5px; color: #7f1d1d; background: #fee2e2; border-radius: 4px; padding: 4px 8px; margin-top: 4px; line-height: 1.4; }
 
-/* ==================== VISUALISEUR & ÉDITEUR DE BALANCE (AFFICHAGE AGRANDI) ==================== */
-.modal-box.modal-xl {
-  max-width: 98vw;
-  width: 98vw;
-  height: 96vh;
-  max-height: 96vh;
-  border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(18, 58, 50, .25);
+/* ==================== VISUALISEUR & ÉDITEUR DE BALANCE (MULTI-ÉCRANS ET RESPONSIVE) ==================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 43, 37, 0.6);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: flex;
-  flex-direction: column;
-}
-
-.modal-box.modal-xl .modal-head {
-  padding: 16px 24px;
-}
-.modal-box.modal-xl .modal-head h2 {
-  font-size: 20px;
-  font-weight: 800;
-}
-.modal-box.modal-xl .modal-head .muted {
-  font-size: 13.5px;
-  margin-top: 2px;
-}
-
-.modal-box.modal-xl .modal-body {
-  padding: 18px 24px;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 10px;
   overflow: hidden;
 }
 
-.bal-kpi-bar {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 14px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 14px 20px;
-  margin-bottom: 14px;
-  flex-shrink: 0;
-}
-.bal-kpi-item {
+.modal-box.modal-xl {
+  width: 98vw;
+  max-width: 1720px;
+  height: 96vh;
+  max-height: 96vh;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  position: relative;
 }
-.bal-kpi-label {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--muted);
-  letter-spacing: .04em;
+
+.modal-box.modal-xl .modal-head {
+  padding: 10px 18px;
+  flex-shrink: 0;
+  border-bottom: 1.5px solid var(--line);
+  background: #fbfdfc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
-.bal-kpi-val {
-  font-size: 16px;
+.modal-box.modal-xl .modal-head h2 {
+  font-size: 17.5px;
   font-weight: 800;
-  font-variant-numeric: tabular-nums;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
+.modal-box.modal-xl .modal-head .muted {
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+.modal-box.modal-xl .modal-body {
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0; /* INDISPENSABLE pour que le scroll interne de la table fonctionne sur tout écran */
+  overflow: hidden;
+  gap: 8px;
+  background: #fdfdfd;
+}
+
+/* Bandeau d'équilibre KPI compact et adaptable */
+.bal-kpi-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f4f8f6;
+  border: 1px solid #d1fae5;
+  border-radius: 8px;
+  padding: 6px 14px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.bal-kpi-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+.bal-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: .02em;
+}
+.bal-kpi-val {
+  font-size: 13.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .bal-kpi-pill {
-  font-size: 12px;
-  padding: 3px 10px;
+  font-size: 11px;
+  padding: 2px 8px;
   border-radius: 999px;
   font-weight: 800;
 }
 .bal-kpi-pill.ok { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 .bal-kpi-pill.bad { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
 
+#balAlertsBox {
+  flex-shrink: 0;
+  max-height: 95px;
+  overflow-y: auto;
+  border-radius: 8px;
+}
+
+/* Barre d'outils */
 .bal-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
   flex-shrink: 0;
 }
 .bal-toolbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   flex: 1;
 }
 .bal-toolbar-left input.search {
-  font-size: 14px;
-  padding: 8px 14px;
-  min-width: 320px;
-  border-radius: 8px;
+  font-size: 13px;
+  padding: 6px 12px;
+  min-width: 240px;
+  border-radius: 6px;
+}
+.bal-toolbar button {
+  font-size: 12.5px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all .15s;
+}
+.bal-toolbar button.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
 }
 .bal-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.bal-toolbar button {
-  font-size: 13.5px;
-  padding: 8px 14px;
+  gap: 8px;
 }
 
+/* Conteneur table scrollable avec scrolling fluide multi-directions */
 .bal-table-wrap {
+  flex: 1 1 auto;
+  min-height: 140px;
   overflow: auto;
   border: 1.5px solid var(--line);
-  border-radius: 10px;
-  flex: 1;
-  min-height: 380px;
+  border-radius: 8px;
   background: #ffffff;
   position: relative;
   box-shadow: inset 0 1px 3px rgba(0,0,0,.03);
 }
+
 .bal-table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
+  min-width: 1220px; /* Assure que toutes les colonnes conservent une largeur lisible sur tout écran */
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
 }
 .bal-table thead th {
   position: sticky;
   top: 0;
-  background: #f1f5f3;
-  z-index: 2;
+  background: #edf3f0;
+  z-index: 5;
   border-bottom: 2px solid var(--line);
-  padding: 11px 8px;
+  padding: 8px 6px;
   text-align: left;
   font-weight: 800;
-  font-size: 13.5px;
+  font-size: 12px;
   color: var(--ink-2);
   white-space: nowrap;
   letter-spacing: .02em;
@@ -368,21 +421,62 @@ details .inner { padding: 4px 16px 16px; }
   text-align: right;
 }
 .bal-table tbody td {
-  padding: 5px 6px;
-  border-top: 1px solid var(--line-2);
+  padding: 3px 5px;
+  border-top: 1px solid #f0f2f1;
   vertical-align: middle;
 }
-.bal-table tbody tr:hover {
+.bal-table tbody tr:hover td {
   background: #f4f8f6;
 }
 .bal-table tr.bal-row-err td {
-  background: #fff5f5 !important;
+  background: #fef2f2 !important;
 }
+.bal-table tr.bal-row-warn td {
+  background: #fffdf5 !important;
+}
+.bal-table tr.bal-row-rec td {
+  background: #f8fafc !important;
+}
+
+/* Badges SYSCOHADA */
+.bal-sys-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.bal-sys-badge.ok {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+.bal-sys-badge.err {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+.bal-sys-badge.warn {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+.bal-sys-badge.rec {
+  background: #eef2ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+}
+
+/* Champs de saisie optimisés pour la balance */
 .bal-table input {
-  padding: 7px 10px;
-  font-size: 14px;
-  border: 1.5px solid var(--line);
-  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
   width: 100%;
   box-sizing: border-box;
   background: #fff;
@@ -391,67 +485,237 @@ details .inner { padding: 4px 16px 16px; }
 .bal-table input:focus {
   border-color: var(--brand);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(18, 58, 50, .18);
+  box-shadow: 0 0 0 2.5px rgba(18, 58, 50, .18);
   background: #fff;
 }
 .bal-table input.num-input {
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  font-size: 14px;
+  -moz-appearance: textfield;
+}
+.bal-table input.num-input::-webkit-outer-spin-button,
+.bal-table input.num-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 .bal-table input.acc-input {
   font-weight: 800;
   color: var(--brand);
-  font-size: 14.5px;
-  letter-spacing: .03em;
+  letter-spacing: .02em;
 }
 .bal-table input.lib-input {
   font-weight: 500;
 }
 .bal-table td.cloture-cell {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  padding: 0 10px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.bal-table td.diag-cell {
+  text-align: center;
+  white-space: nowrap;
+  padding: 3px 6px;
 }
 .bal-table .btn-del-row {
   background: none;
   border: none;
   color: #ef4444;
   cursor: pointer;
-  padding: 6px 8px;
-  font-size: 16px;
-  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 14px;
+  border-radius: 4px;
   transition: background .15s;
 }
 .bal-table .btn-del-row:hover {
   background: #fee2e2;
 }
 
+/* Pagination */
 .bal-pagination {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 6px 0;
-  font-size: 14px;
+  padding: 6px 2px 0;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--muted);
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   flex-shrink: 0;
 }
 .bal-pagination button {
-  font-size: 13.5px;
-  padding: 6px 14px;
+  font-size: 12px;
+  padding: 4px 10px;
 }
 
+/* Pied de modale */
 .modal-box.modal-xl .modal-foot {
-  padding: 14px 24px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  background: #fbfdfc;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 .modal-box.modal-xl .modal-foot button {
-  font-size: 14.5px;
-  padding: 9px 18px;
+  font-size: 13.5px;
+  padding: 7px 16px;
+}
+
+/* ==================== ADAPTATION AUX DIFFÉRENTS TYPES D'ÉCRANS ==================== */
+
+/* 1. Écrans d'ordinateurs portables standards ou à faible hauteur (ex. 1366x768, 1280x800 ou zoom 125%/150%) */
+@media (max-height: 780px) {
+  .modal-overlay {
+    padding: 6px;
+  }
+  .modal-box.modal-xl {
+    height: 98vh;
+    max-height: 98vh;
+    width: 99vw;
+  }
+  .modal-box.modal-xl .modal-head {
+    padding: 7px 14px;
+  }
+  .modal-box.modal-xl .modal-head h2 {
+    font-size: 15.5px;
+  }
+  .modal-box.modal-xl .modal-head .muted {
+    display: none;
+  }
+  .modal-box.modal-xl .modal-body {
+    padding: 6px 12px;
+    gap: 6px;
+  }
+  .bal-kpi-bar {
+    padding: 4px 10px;
+    gap: 8px;
+  }
+  .bal-kpi-item {
+    font-size: 11.5px;
+  }
+  .bal-kpi-val {
+    font-size: 12.5px;
+  }
+  #balAlertsBox {
+    max-height: 70px;
+  }
+  .bal-toolbar {
+    gap: 6px;
+  }
+  .bal-toolbar-left input.search {
+    padding: 4px 10px;
+    font-size: 12px;
+    min-width: 180px;
+  }
+  .bal-toolbar button {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  .bal-table thead th {
+    padding: 6px 4px;
+    font-size: 11.5px;
+  }
+  .bal-table tbody td {
+    padding: 2px 4px;
+  }
+  .bal-table input {
+    padding: 3px 6px;
+    font-size: 12.5px;
+  }
+  .bal-pagination {
+    padding: 4px 2px 0;
+    font-size: 11.5px;
+  }
+  .modal-box.modal-xl .modal-foot {
+    padding: 7px 14px;
+  }
+  .modal-box.modal-xl .modal-foot button {
+    padding: 6px 12px;
+    font-size: 12.5px;
+  }
+}
+
+/* 2. Écrans moyens / Tablettes horizontales (max 1024px de largeur) */
+@media (max-width: 1024px) {
+  .modal-overlay {
+    padding: 6px;
+  }
+  .modal-box.modal-xl {
+    width: 99vw;
+    height: 98vh;
+    max-height: 98vh;
+    border-radius: 8px;
+  }
+  .bal-toolbar-left {
+    width: 100%;
+  }
+  .bal-toolbar-left input.search {
+    flex: 1;
+    min-width: 160px;
+  }
+  .bal-toolbar-right {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* 3. Mobiles et petites tablettes (max 768px de largeur) */
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 0 !important;
+  }
+  .modal-box.modal-xl {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border: none !important;
+  }
+  .modal-box.modal-xl .modal-head {
+    padding: 8px 12px;
+  }
+  .modal-box.modal-xl .modal-head h2 {
+    font-size: 15px;
+  }
+  .modal-box.modal-xl .modal-body {
+    padding: 6px;
+    gap: 6px;
+  }
+  .bal-kpi-bar {
+    padding: 6px 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .bal-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .bal-toolbar-left, .bal-toolbar-right {
+    width: 100%;
+  }
+  .bal-toolbar button, .bal-toolbar input.search {
+    flex: 1;
+  }
+  .modal-box.modal-xl .modal-foot {
+    padding: 8px 12px;
+    flex-direction: column-reverse;
+    gap: 6px;
+  }
+  .modal-box.modal-xl .modal-foot > div {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .modal-box.modal-xl .modal-foot .btn {
+    flex: 1;
+  }
 }
 
 

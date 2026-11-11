@@ -419,8 +419,9 @@
       <div class="bal-toolbar">
         <div class="bal-toolbar-left">
           <input type="search" class="search" id="balSearchInput" placeholder="🔍 Rechercher par n° de compte ou libellé…" style="min-width:280px;">
-          <button type="button" class="btn sm ghost" id="btnFilterErrors" title="Afficher uniquement les comptes anormaux">⚠️ Comptes anormaux</button>
           <button type="button" class="btn sm ghost" id="btnFilterAll" style="font-weight:700;">Tous les comptes</button>
+          <button type="button" class="btn sm ghost" id="btnFilterErrors" title="Afficher uniquement les anomalies et infractions SYSCOHADA">⚠️ Anomalies SYSCOHADA (<span id="balErrBadgeCount">0</span>)</button>
+          <button type="button" class="btn sm ghost" id="btnFilterReclassements" title="Afficher les comptes 401 débiteurs ou 411 créditeurs à reclasser selon l'Art. 34 AUDCIF">💡 Reclassements 409/419 (<span id="balRecBadgeCount">0</span>)</button>
         </div>
         <div class="bal-toolbar-right">
           <button type="button" class="btn sm primary" id="btnAddBalRow">➕ Ajouter un compte</button>
@@ -435,12 +436,13 @@
             <tr>
               <th style="width:48px; text-align:center;">#</th>
               <th style="width:130px;">N° Compte *</th>
-              <th style="min-width:280px;">Intitulé du compte *</th>
-              <th class="th-num" style="width:150px;">Solde Ant. Dbt</th>
-              <th class="th-num" style="width:150px;">Solde Ant. Cdt</th>
-              <th class="th-num" style="width:150px;">Mvt Débit</th>
-              <th class="th-num" style="width:150px;">Mvt Crédit</th>
-              <th class="th-num" style="width:150px;">Solde Clôture</th>
+              <th style="min-width:260px;">Intitulé du compte *</th>
+              <th class="th-num" style="width:140px;">Solde Ant. Dbt</th>
+              <th class="th-num" style="width:140px;">Solde Ant. Cdt</th>
+              <th class="th-num" style="width:140px;">Mvt Débit</th>
+              <th class="th-num" style="width:140px;">Mvt Crédit</th>
+              <th class="th-num" style="width:140px;">Solde Clôture</th>
+              <th style="width:200px; text-align:center;">Norme SYSCOHADA</th>
               <th style="width:48px; text-align:center;"></th>
             </tr>
           </thead>
@@ -479,6 +481,6 @@
 <script src="vendor/supabase.js"></script>
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
-<script type="module" src="js/app.js?v=20261111_04"></script>
+<script type="module" src="js/app.js?v=20261111_05"></script>
 </body>
 </html>

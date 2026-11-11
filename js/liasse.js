@@ -25,9 +25,265 @@ function cleanAmount(v) {
   return neg ? -n : n;
 }
 
+export const fmt = n => (typeof n === 'number' ? (Math.round(n) || 0).toLocaleString('fr-FR').replace(/ | /g, ' ') : String(n ?? ''));
+
+/**
+ * Analyse de conformité comptable selon les normes officielles du SYSCOHADA révisé (AUDCIF).
+ * @param {Array<Array|object>} rows - Liste des lignes (tableau [compte, intitule, sad, sac, md, mc] ou objet {acc, lib, sad, sac, md, mc})
+ * @param {string} label - Libellé de la balance ('Balance N' ou 'Balance N-1')
+ * @returns {{ errors: string[], warnings: string[], sysAlerts: Array<object>, totals: object, rowAlertsMap: Map<string, Array<object>> }}
+ */
+export function checkSyscohadaRules(rows, label = 'Balance') {
+  const errors = [];
+  const warnings = [];
+  const sysAlerts = [];
+  const rowAlertsMap = new Map();
+
+  function addAlert(accStr, alert) {
+    sysAlerts.push(alert);
+    if (!rowAlertsMap.has(accStr)) rowAlertsMap.set(accStr, []);
+    rowAlertsMap.get(accStr).push(alert);
+    if (alert.type === 'error') errors.push(alert.fullMessage);
+    else warnings.push(alert.fullMessage);
+  }
+
+  let sadTot = 0, sacTot = 0, mdTot = 0, mcTot = 0;
+  let clDebTot = 0, clCdtTot = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const accRaw = Array.isArray(r) ? r[0] : r.acc;
+    const libRaw = Array.isArray(r) ? r[1] : r.lib;
+    const sad = Number(Array.isArray(r) ? r[2] : r.sad) || 0;
+    const sac = Number(Array.isArray(r) ? r[3] : r.sac) || 0;
+    const md = Number(Array.isArray(r) ? r[4] : r.md) || 0;
+    const mc = Number(Array.isArray(r) ? r[5] : r.mc) || 0;
+
+    const accStr = String(accRaw ?? '').trim().replace(/\s/g, '');
+    const lib = String(libRaw ?? '').trim();
+
+    sadTot += sad;
+    sacTot += sac;
+    mdTot += md;
+    mcTot += mc;
+
+    const netCloture = (sad - sac) + (md - mc);
+    if (netCloture > 0) clDebTot += netCloture;
+    else if (netCloture < 0) clCdtTot += Math.abs(netCloture);
+
+    // 1. Contrôle de format et conformité numérique du compte
+    if (!/^\d{2,}$/.test(accStr)) {
+      addAlert(accStr, {
+        type: 'error',
+        code: 'NUM_INVALIDE',
+        rule: 'SYSCOHADA Codification',
+        compte: accStr || '(vide)',
+        libelle: lib,
+        badgeText: 'Compte invalide',
+        message: `Compte « ${accStr || '(vide)'} » invalide : doit comporter au moins 2 chiffres numériques.`,
+        fullMessage: `${label} : compte « ${accStr || '(vide)'} » non conforme (doit comporter au moins 2 chiffres numériques).`
+      });
+      continue;
+    }
+
+    // 2. Contrôle des montants négatifs (interdits en balance générale SYSCOHADA)
+    if (sad < 0 || sac < 0 || md < 0 || mc < 0) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'MONTANT_NEGATIF',
+        rule: 'SYSCOHADA Règles de Tenue',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Montant négatif',
+        message: `Montant négatif détecté. En SYSCOHADA, tout montant doit être imputé en valeur positive au débit ou au crédit.`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Règles de Tenue] Montant négatif interdit en balance générale (à imputer en valeur positive au Débit ou Crédit).`
+      });
+    }
+
+    // 3. Soldes d'ouverture sur comptes de gestion (Classes 6, 7 et 8)
+    if (/^[678]/.test(accStr) && (Math.abs(sad) > 0.01 || Math.abs(sac) > 0.01)) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'GESTION_OUVERTURE',
+        rule: 'SYSCOHADA Comptes de Gestion',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Gestion au 01/01',
+        message: `Solde d'ouverture non nul au 01/01 (${fmt(sad || sac)} FCFA). Les comptes de charges et produits doivent être soldés à l'ouverture.`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Comptes de Gestion] Solde d'ouverture non nul (${fmt(sad || sac)} FCFA). Les charges et produits doivent être soldés au 01/01.`
+      });
+    }
+
+    // 4. Compte de Caisse (57) : solde créditeur strictement interdit
+    if (accStr.startsWith('57') && netCloture < -0.01) {
+      addAlert(accStr, {
+        type: 'error',
+        code: 'CAISSE_CREDITRICE',
+        rule: 'SYSCOHADA Norme Trésorerie (Compte 57)',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Caisse créditrice',
+        message: `Solde de clôture créditeur de ${fmt(Math.abs(netCloture))} FCFA. Une caisse physique ne peut JAMAIS être créditrice en SYSCOHADA.`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Compte 57 - Caisse] Solde créditeur de ${fmt(Math.abs(netCloture))} FCFA INTERDIT. Une caisse physique ne peut décaisser plus d'espèces qu'elle n'en détient.`
+      });
+    }
+
+    // 5. Comptes d'amortissements (28x) et dépréciations (29x, 39x, 49x, 59x) : solde débiteur interdit
+    if (/^(28|29|39|49|59)/.test(accStr) && netCloture > 0.01) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'SOUSTRACTIF_DEBITEUR',
+        rule: 'SYSCOHADA Comptes Soustractifs',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Amort./Dépréc. débiteur',
+        message: `Solde net débiteur (${fmt(netCloture)} FCFA). En SYSCOHADA, les amortissements et dépréciations d'actif doivent obligatoirement être créditeurs ou nuls.`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Comptes Soustractifs] Solde anormalement débiteur (${fmt(netCloture)} FCFA). Les amortissements (28) et dépréciations d'actif doivent être créditeurs ou nuls.`
+      });
+    }
+
+    // 6. Actifs bruts (Classes 2 et 3 hors 28/29/39) : solde brut créditeur interdit
+    if (/^[23]/.test(accStr) && !/^(28|29|39)/.test(accStr) && netCloture < -0.01) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'ACTIF_BRUT_CREDITEUR',
+        rule: 'SYSCOHADA Actif Immobilisé & Stocks',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Actif brut créditeur',
+        message: `Solde brut créditeur (${fmt(Math.abs(netCloture))} FCFA). La valeur brute d'un actif physique ou immobilisé ne peut être négative.`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Actifs Bruts] Solde brut créditeur (${fmt(Math.abs(netCloture))} FCFA). La valeur d'acquisition d'une immobilisation ou d'un stock ne peut être créditrice.`
+      });
+    }
+
+    // 7. Règle de non-compensation (AUDCIF Art. 34 alinéa 3)
+    // Fournisseurs (401) débiteurs -> reclassement 409
+    if (accStr.startsWith('401') && netCloture > 0.01) {
+      addAlert(accStr, {
+        type: 'reclassement',
+        code: 'NON_COMPENSATION_FOURNISSEUR',
+        rule: 'SYSCOHADA AUDCIF Art. 34 (Non-compensation)',
+        compte: accStr,
+        libelle: lib,
+        badgeText: '💡 Reclassement 409',
+        message: `Solde débiteur de ${fmt(netCloture)} FCFA. Reclassement recommandé au compte 409 (Fournisseurs débiteurs : avances et acomptes versés).`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA AUDCIF Art. 34 - Non-compensation] Solde fournisseur débiteur (${fmt(netCloture)} FCFA). Reclassement recommandé au compte 409 (Avances versées).`
+      });
+    }
+    // Clients (411) créditeurs -> reclassement 419
+    if (accStr.startsWith('411') && netCloture < -0.01) {
+      addAlert(accStr, {
+        type: 'reclassement',
+        code: 'NON_COMPENSATION_CLIENT',
+        rule: 'SYSCOHADA AUDCIF Art. 34 (Non-compensation)',
+        compte: accStr,
+        libelle: lib,
+        badgeText: '💡 Reclassement 419',
+        message: `Solde créditeur de ${fmt(Math.abs(netCloture))} FCFA. Reclassement recommandé au compte 419 (Clients créditeurs : avances et acomptes reçus).`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA AUDCIF Art. 34 - Non-compensation] Solde client créditeur (${fmt(Math.abs(netCloture))} FCFA). Reclassement recommandé au compte 419 (Avances reçues).`
+      });
+    }
+
+    // 8. Sens des comptes de gestion (Charges classe 6 et Produits classe 7)
+    if (accStr.startsWith('6') && !accStr.startsWith('603') && netCloture < -0.01) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'CHARGE_CREDITRICE',
+        rule: 'SYSCOHADA Comptes de Charges',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Charge créditrice',
+        message: `Solde net créditeur (${fmt(Math.abs(netCloture))} FCFA). Un compte de charges doit normalement présenter un solde débiteur.`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Comptes de Charges] Solde net créditeur (${fmt(Math.abs(netCloture))} FCFA). Un compte de charges est normalement débiteur.`
+      });
+    }
+    if (accStr.startsWith('7') && !/^(73|709|719|729)/.test(accStr) && netCloture > 0.01) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'PRODUIT_DEBITEUR',
+        rule: 'SYSCOHADA Comptes de Produits',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Produit débiteur',
+        message: `Solde net débiteur (${fmt(netCloture)} FCFA). Un compte de produits doit normalement présenter un solde créditeur.`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Comptes de Produits] Solde net débiteur (${fmt(netCloture)} FCFA). Un compte de produits est normalement créditeur.`
+      });
+    }
+
+    // 9. Racines proscrites / obsolètes du SYSCOHADA Révisé
+    if (accStr.startsWith('20')) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'COMPTE_PROSCRIT_20',
+        rule: 'SYSCOHADA Révisé (Comptes proscrits)',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Racine 20 supprimée',
+        message: `La racine 20 (Frais d'établissement) a été supprimée dans le SYSCOHADA révisé (frais comptabilisés directement en charges).`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Révisé] Racine 20 supprimée (frais d'établissement à constater directement en charges).`
+      });
+    }
+    if (accStr.startsWith('74') || accStr.startsWith('76')) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'COMPTE_PROSCRIT_74_76',
+        rule: 'SYSCOHADA Révisé (Comptes proscrits)',
+        compte: accStr,
+        libelle: lib,
+        badgeText: `Racine ${accStr.slice(0, 2)} supprimée`,
+        message: `La racine ${accStr.slice(0, 2)} a été supprimée dans le SYSCOHADA révisé (à reclasser en 70, 75 ou 77).`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Révisé] Racine ${accStr.slice(0, 2)} supprimée (à reclasser vers 70, 75 ou 77 selon la nature).`
+      });
+    }
+    if (accStr.startsWith('9')) {
+      addAlert(accStr, {
+        type: 'warning',
+        code: 'CLASSE_9',
+        rule: 'SYSCOHADA Révisé (Classe 9)',
+        compte: accStr,
+        libelle: lib,
+        badgeText: 'Classe 9 analytique',
+        message: `Les comptes de classe 9 (analytique) ne font pas partie de la liasse financière officielle.`,
+        fullMessage: `${label} compte ${accStr} (${lib}) : [SYSCOHADA Révisé] Les comptes de classe 9 (analytique) doivent être exclus de la balance générale des états financiers.`
+      });
+    }
+  }
+
+  // 10. Contrôle d'équilibre global
+  const ecartOuv = Math.round(sadTot - sacTot);
+  const ecartMvt = Math.round(mdTot - mcTot);
+  const ecartCloture = Math.round(clDebTot - clCdtTot);
+
+  if (Math.abs(ecartOuv) >= 1) {
+    errors.push(`${label} déséquilibrée : [SYSCOHADA AUDCIF Art. 34] Soldes d'ouverture Débit – Crédit = ${fmt(ecartOuv)} FCFA (le bilan d'ouverture doit être rigoureusement équilibré).`);
+  }
+  if (Math.abs(ecartMvt) >= 1) {
+    errors.push(`${label} déséquilibrée : [SYSCOHADA AUDCIF Art. 17] Principe de la partie double non respecté (Mouvements Débit – Crédit = ${fmt(ecartMvt)} FCFA).`);
+  }
+
+  return {
+    errors,
+    warnings,
+    sysAlerts,
+    rowAlertsMap,
+    totals: {
+      sad: sadTot,
+      sac: sacTot,
+      md: mdTot,
+      mc: mcTot,
+      clDebTot,
+      clCdtTot,
+      ecartOuv,
+      ecartMvt,
+      ecartCloture,
+      comptes: rows.length
+    }
+  };
+}
+
 /**
  * Normalise une balance lue par SheetJS (tableau de lignes).
- * @returns {{rows:any[][], errors:string[], warnings:string[], totals:object}}
+ * @returns {{rows:any[][], errors:string[], warnings:string[], sysAlerts:Array<object>, totals:object}}
  */
 export function parseBalance(aoa, label = 'Balance') {
   const errors = [], warnings = [];
@@ -40,7 +296,6 @@ export function parseBalance(aoa, label = 'Balance') {
     if (!ok) errors.push(`${label} : colonnes attendues dans cet ordre : ${BALANCE_COLUMNS.join(' | ')}.`);
   }
   const rows = []; const seen = new Map();
-  const tot = { sad: 0, sac: 0, md: 0, mc: 0 };
   for (let i = h + 1; i < aoa.length; i++) {
     const r = aoa[i] || [];
     if (r.slice(0, 6).every(c => c === null || c === undefined || String(c).trim() === '')) continue;
@@ -54,20 +309,27 @@ export function parseBalance(aoa, label = 'Balance') {
     acc = Number(accStr);
     const amts = r.slice(2, 6).map(cleanAmount);
     if (amts.some(a => Number.isNaN(a))) { errors.push(`${label} ligne ${i + 1} (compte ${accStr}) : montant illisible.`); continue; }
-    if (amts.some(a => a !== null && a < 0)) warnings.push(`${label} compte ${accStr} : montant négatif (vérifier le sens).`);
     if (seen.has(accStr)) warnings.push(`${label} : compte ${accStr} en double (lignes ${seen.get(accStr)} et ${i + 1}).`);
     seen.set(accStr, i + 1);
     rows.push([acc, String(lib).trim(), ...amts]);
-    tot.sad += amts[0] || 0; tot.sac += amts[1] || 0; tot.md += amts[2] || 0; tot.mc += amts[3] || 0;
   }
   if (!rows.length) errors.push(`${label} : aucune ligne de compte lue.`);
   if (rows.length > 5000) errors.push(`${label} : ${rows.length} comptes, capacité maximale 5 000.`);
-  const ecartOuv = Math.round(tot.sad - tot.sac), ecartMvt = Math.round(tot.md - tot.mc);
-  if (Math.abs(ecartOuv) >= 1) errors.push(`${label} déséquilibrée : soldes d'ouverture débit – crédit = ${fmt(ecartOuv)} FCFA.`);
-  if (Math.abs(ecartMvt) >= 1) errors.push(`${label} déséquilibrée : mouvements débit – crédit = ${fmt(ecartMvt)} FCFA.`);
-  return { rows, errors, warnings, totals: { ...tot, comptes: rows.length } };
+
+  // Validation approfondie selon les règles du SYSCOHADA révisé (AUDCIF)
+  const sysCheck = checkSyscohadaRules(rows, label);
+  errors.push(...sysCheck.errors);
+  warnings.push(...sysCheck.warnings);
+
+  return {
+    rows,
+    errors: [...new Set(errors)],
+    warnings: [...new Set(warnings)],
+    sysAlerts: sysCheck.sysAlerts,
+    rowAlertsMap: sysCheck.rowAlertsMap,
+    totals: sysCheck.totals
+  };
 }
-export const fmt = n => (typeof n === 'number' ? (Math.round(n) || 0).toLocaleString('fr-FR').replace(/ | /g, ' ') : String(n ?? ''));
 
 // ------------------------------------------------------------------ informations complémentaires
 // cellule de la feuille « Saisie infos » ; type : text | date | int | num | code | select
@@ -192,11 +454,11 @@ export function readResults(wb) {
     for (let r = 7; r <= last; r++) {
       const acc = g(sheet, 'A' + r); if (acc === null || acc === '') continue;
       const msgs = [];
-      if (g(sheet, 'R' + r) === 'ANOMALIE') msgs.push(`solde de sens anormal (attendu ${g(sheet, 'Q' + r)})`);
-      if (g(sheet, 'S' + r) === 'NON CONFORME') msgs.push('racine absente du plan révisé');
-      const k = g(sheet, 'K' + r); if (isErr(wb.getAddr(sheet, 'K' + r)) || k === '#N/A') msgs.push('compte non classé dans la table de correspondance');
+      if (g(sheet, 'R' + r) === 'ANOMALIE') msgs.push(`[SYSCOHADA Révisé] Solde de sens anormal (attendu ${g(sheet, 'Q' + r)})`);
+      if (g(sheet, 'S' + r) === 'NON CONFORME') msgs.push('[SYSCOHADA Révisé] Racine de compte absente de la nomenclature officielle');
+      const k = g(sheet, 'K' + r); if (isErr(wb.getAddr(sheet, 'K' + r)) || k === '#N/A') msgs.push('[SYSCOHADA / DGID] Compte non classé dans la table de correspondance Sen-etafi');
       const t = g(sheet, 'T' + r); if (t) msgs.push(t.replace(/ ;\s*$/, ''));
-      if (sheet === 'Balance N') { const p = g(sheet, 'P' + r); if (typeof p === 'number' && Math.abs(p) > 0.5) msgs.push(`ouverture N ≠ clôture N-1 (écart ${fmt(p)})`); }
+      if (sheet === 'Balance N') { const p = g(sheet, 'P' + r); if (typeof p === 'number' && Math.abs(p) > 0.5) msgs.push(`[SYSCOHADA AUDCIF Art. 34] Intangibilité du bilan d'ouverture non respectée (Ouverture N ≠ Clôture N-1, écart ${fmt(p)} FCFA)`); }
       if (msgs.length) anomalies.push({ balance: sheet === 'Balance N' ? 'N' : 'N-1', compte: acc, intitule: g(sheet, 'B' + r), solde: num(g(sheet, 'H' + r)), messages: msgs });
     }
   }

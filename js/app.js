@@ -489,13 +489,34 @@ function renderBalanceReport(k, p) {
     </li>`;
   }).join('');
 
-  // Remarques SYSCOHADA avec lien direct
-  const warningsHtml = p.warnings.slice(0, 40).map(x => {
+  // Remarques SYSCOHADA avec lien direct et validation par le client
+  const remarquesVal = (state.dossier?.infos && state.dossier.infos.remarques_validations) || {};
+  const warningsHtml = p.warnings.slice(0, 40).map((x, idx) => {
     const m = x.match(/compte\s+([0-9A-Za-z]+)/i);
-    const acc = m ? m[1] : null;
+    const acc = m ? m[1] : `w_${idx}`;
+    const remKey = `${k}_${acc}_${idx}`;
+    const v = remarquesVal[remKey];
+
+    let valBadge = '';
+    if (v?.status === 'validated') {
+      valBadge = `<span class="badge ok" style="font-size:10.5px; padding:2px 6px;">✅ Validée</span>`;
+    } else if (v?.status === 'rejected') {
+      valBadge = `<span class="badge warn" style="font-size:10.5px; padding:2px 6px;" title="${esc(v.note || 'Écart justifié')}">❌ Non validée</span>`;
+    } else {
+      valBadge = `
+        <span class="btn-group-rem">
+          <button type="button" class="btn-rem-action btn-rem-validate" data-rem-key="${remKey}" data-refresh-bal="${k}" title="Valider cette remarque">✔</button>
+          <button type="button" class="btn-rem-action btn-rem-reject" data-rem-key="${remKey}" data-refresh-bal="${k}" title="Ne pas valider cette remarque (justifiée)">✖</button>
+        </span>
+      `;
+    }
+
     return `<li style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; padding:2px 0;">
       <span>${esc(x)}</span>
-      ${acc ? `<button type="button" class="btn-goto-account link small" data-bal-key="${k}" data-acc="${acc}" style="font-weight:700; white-space:nowrap; color:#b45309;">✏️ Examiner</button>` : ''}
+      <div style="display:inline-flex; align-items:center; gap:6px;">
+        ${valBadge}
+        ${acc && !acc.startsWith('w_') ? `<button type="button" class="btn-goto-account link small" data-bal-key="${k}" data-acc="${acc}" style="font-weight:700; white-space:nowrap; color:#b45309;">✏️ Examiner</button>` : ''}
+      </div>
     </li>`;
   }).join('');
 
@@ -1053,8 +1074,96 @@ $('#btnSaveBalanceEdits')?.addEventListener('click', async () => {
   toast(`✅ ${label} enregistrée avec succès (${parsed.rows.length} comptes) !`);
 });
 
-// Écouteur global de délégation pour toutes les actions directes de navigation vers correction
-document.addEventListener('click', e => {
+// ------------------------------------------------------------------ Validation des Remarques Client
+function getRemarqueValidation(key) {
+  return state.dossier?.infos?.remarques_validations?.[key] || null;
+}
+
+async function setRemarqueValidation(key, status, note = '') {
+  if (!state.dossier) return;
+  state.dossier.infos ||= {};
+  state.dossier.infos.remarques_validations ||= {};
+  if (status === null) {
+    delete state.dossier.infos.remarques_validations[key];
+  } else {
+    state.dossier.infos.remarques_validations[key] = {
+      status,
+      note: String(note || '').trim(),
+      updated_at: new Date().toISOString()
+    };
+  }
+  await saveInfos(true);
+}
+
+function refreshRemarquesCounters() {
+  const d = state.dossier;
+  if (!d) return;
+  const remarquesVal = (d.infos && d.infos.remarques_validations) || {};
+  const rep = d.exercise?.rapport || {};
+  const an = rep.anomalies || [];
+  let validCount = 0;
+  let rejectCount = 0;
+  let pendingCount = 0;
+  an.forEach((a, i) => {
+    const remKey = `${a.balance || 'N'}_${a.compte}_${i}`;
+    const v = remarquesVal[remKey];
+    if (v?.status === 'validated') validCount++;
+    else if (v?.status === 'rejected') rejectCount++;
+    else pendingCount++;
+  });
+  const elV = $('#countRemValid');
+  if (elV) elV.textContent = `✅ ${validCount} validée(s)`;
+  const elR = $('#countRemReject');
+  if (elR) elR.textContent = `❌ ${rejectCount} non validée(s)`;
+  const elP = $('#countRemPending');
+  if (elP) elP.textContent = `⏳ ${pendingCount} en attente`;
+}
+
+function updateRemarqueRowUI(remKey, valObj) {
+  const tr = document.querySelector(`tr[data-rem-row="${remKey}"]`);
+  if (!tr) return;
+  const tdVal = tr.querySelector('.td-rem-val');
+  if (!tdVal) return;
+
+  if (valObj?.status === 'validated') {
+    tdVal.innerHTML = `
+      <div class="rem-status-box" style="align-items:center;">
+        <span class="badge ok" style="font-weight:700;">✅ Remarque validée</span>
+        <button type="button" class="link small btn-rem-reset" data-rem-key="${esc(remKey)}" style="font-size:11px; margin-top:2px;">Modifier</button>
+      </div>
+    `;
+    tr.style.background = '#f0fdf4';
+  } else if (valObj?.status === 'rejected') {
+    tdVal.innerHTML = `
+      <div class="rem-status-box" style="align-items:center;">
+        <span class="badge warn" style="font-weight:700;">❌ Non validée</span>
+        ${valObj.note ? `<div class="small muted" style="font-size:11px; text-align:center;"><em>${esc(valObj.note)}</em></div>` : ''}
+        <div style="display:flex; gap:4px; margin-top:2px;">
+          <button type="button" class="link small btn-rem-note" data-rem-key="${esc(remKey)}" data-curr-note="${esc(valObj.note || '')}" style="font-size:11px;">✏️ Motif</button>
+          <button type="button" class="link small btn-rem-reset" data-rem-key="${esc(remKey)}" style="font-size:11px;">Modifier</button>
+        </div>
+      </div>
+    `;
+    tr.style.background = '#fef2f2';
+  } else {
+    tdVal.innerHTML = `
+      <div class="btn-group-rem" style="justify-content:center;">
+        <button type="button" class="btn-rem-action btn-rem-validate" data-rem-key="${esc(remKey)}" title="Valider la remarque (considérée comme prise en compte)">
+          ✔ Valider
+        </button>
+        <button type="button" class="btn-rem-action btn-rem-reject" data-rem-key="${esc(remKey)}" title="Ne pas valider la remarque (écart justifié / dérogation)">
+          ✖ Ne pas valider
+        </button>
+      </div>
+    `;
+    tr.style.background = '';
+  }
+
+  refreshRemarquesCounters();
+}
+
+// Écouteur global de délégation pour toutes les actions directes de navigation vers correction & validation
+document.addEventListener('click', async e => {
   // 1. Bouton "À corriger" / badge d'anomalies de la carte Balance (Étape 2)
   const fixBalBtn = e.target.closest('.btn-fix-balance');
   if (fixBalBtn) {
@@ -1103,6 +1212,122 @@ document.addEventListener('click', e => {
     e.preventDefault();
     const k = openBalBtn.dataset.balKey || openBalBtn.dataset.openEditor || 'N';
     openBalanceEditor(k);
+    return;
+  }
+
+  // 6. Validation d'une remarque par le client
+  const remValBtn = e.target.closest('.btn-rem-validate');
+  if (remValBtn) {
+    e.preventDefault();
+    const key = remValBtn.dataset.remKey;
+    if (!key) return;
+    await setRemarqueValidation(key, 'validated');
+    toast('✅ Remarque validée par le client');
+    if (remValBtn.dataset.refreshBal) {
+      const k = remValBtn.dataset.refreshBal;
+      const parsed = state.dossier[k === 'N' ? 'balN' : 'balN1'];
+      if (parsed) renderBalanceReport(k, parsed);
+    } else if (key.startsWith('ctl_')) {
+      renderStoredResult(true);
+    } else {
+      updateRemarqueRowUI(key, { status: 'validated' });
+    }
+    return;
+  }
+
+  // 7. Non-validation / dérogation d'une remarque par le client
+  const remRejBtn = e.target.closest('.btn-rem-reject');
+  if (remRejBtn) {
+    e.preventDefault();
+    const key = remRejBtn.dataset.remKey;
+    if (!key) return;
+    const promptNote = window.prompt("Motif de non-validation ou justification de l'écart (optionnel) :", "Écart justifié / dérogation approuvée par l'entreprise");
+    if (promptNote === null) return;
+    const note = promptNote.trim() || "Écart justifié / dérogation approuvée";
+    await setRemarqueValidation(key, 'rejected', note);
+    toast('❌ Remarque marquée comme non validée (justifiée)');
+    if (remRejBtn.dataset.refreshBal) {
+      const k = remRejBtn.dataset.refreshBal;
+      const parsed = state.dossier[k === 'N' ? 'balN' : 'balN1'];
+      if (parsed) renderBalanceReport(k, parsed);
+    } else if (key.startsWith('ctl_')) {
+      renderStoredResult(true);
+    } else {
+      updateRemarqueRowUI(key, { status: 'rejected', note });
+    }
+    return;
+  }
+
+  // 8. Modifier le motif de non-validation
+  const remNoteBtn = e.target.closest('.btn-rem-note');
+  if (remNoteBtn) {
+    e.preventDefault();
+    const key = remNoteBtn.dataset.remKey;
+    const curr = remNoteBtn.dataset.currNote || '';
+    const newNote = window.prompt("Modifier le motif de non-validation / justification :", curr);
+    if (newNote !== null) {
+      const note = newNote.trim() || "Écart justifié";
+      await setRemarqueValidation(key, 'rejected', note);
+      toast('Motif de justification mis à jour');
+      updateRemarqueRowUI(key, { status: 'rejected', note });
+    }
+    return;
+  }
+
+  // 9. Réinitialiser la décision sur une remarque
+  const remResetBtn = e.target.closest('.btn-rem-reset');
+  if (remResetBtn) {
+    e.preventDefault();
+    const key = remResetBtn.dataset.remKey;
+    if (!key) return;
+    await setRemarqueValidation(key, null);
+    toast('Décision réinitialisée : remarque remise en attente');
+    if (key.startsWith('ctl_')) {
+      renderStoredResult(true);
+    } else {
+      updateRemarqueRowUI(key, null);
+    }
+    return;
+  }
+
+  // 10. Validation globale en masse des remarques
+  const bulkValBtn = e.target.closest('#btnBulkValidateRemarques');
+  if (bulkValBtn) {
+    e.preventDefault();
+    const d = state.dossier;
+    if (!d) return;
+    const rep = d.exercise?.rapport || {};
+    const an = rep.anomalies || [];
+    d.infos ||= {};
+    d.infos.remarques_validations ||= {};
+    an.forEach((a, i) => {
+      const remKey = `${a.balance || 'N'}_${a.compte}_${i}`;
+      if (!d.infos.remarques_validations[remKey] || d.infos.remarques_validations[remKey].status !== 'rejected') {
+        d.infos.remarques_validations[remKey] = {
+          status: 'validated',
+          note: 'Validation globale',
+          updated_at: new Date().toISOString()
+        };
+      }
+    });
+    await saveInfos(true);
+    toast(`✅ Toutes les remarques (${an.length}) ont été validées.`);
+    renderStoredResult(true);
+    return;
+  }
+
+  // 11. Réinitialisation globale de toutes les décisions
+  const resetAllBtn = e.target.closest('#btnResetAllRemarques');
+  if (resetAllBtn) {
+    e.preventDefault();
+    if (!confirm("Voulez-vous réinitialiser toutes les décisions de validation des remarques ?")) return;
+    const d = state.dossier;
+    if (!d) return;
+    d.infos ||= {};
+    d.infos.remarques_validations = {};
+    await saveInfos(true);
+    toast('Toutes les décisions ont été réinitialisées.');
+    renderStoredResult(true);
     return;
   }
 });
@@ -1438,9 +1663,11 @@ async function executeGeneration(mode) {
   }
 }
 
-function renderStoredResult() {
-  const ex = state.dossier.exercise;
-  if (ex?.rapport && ex.generated_at && !$('#resultBox').innerHTML) renderResult(ex.rapport, false);
+function renderStoredResult(force = false) {
+  const ex = state.dossier?.exercise;
+  if (ex?.rapport && (force || (ex.generated_at && !$('#resultBox').innerHTML))) {
+    renderResult(ex.rapport, false);
+  }
 }
 
 const CONTROLS_DIAGNOSTIC = {
@@ -1659,6 +1886,19 @@ function renderResult(r, fresh) {
   const val = (l, v) => (/marge/i.test(l) ? pct(v) : fmt(v));
   const kpis = (r.chiffresCles || []).map(k => `<div class="kpi"><div class="l">${esc(k.libelle)}</div><div class="v">${esc(val(k.libelle, k.n))}</div><div class="d">N-1 : ${esc(val(k.libelle, k.n1))}${typeof k.variation === 'number' && !/marge/i.test(k.libelle) ? ' · ' + pct(k.variation) : ''}</div></div>`).join('');
   const an = r.anomalies || [];
+  const remarquesVal = (d.infos && d.infos.remarques_validations) || {};
+
+  // Calcul des compteurs de décisions client
+  let validCount = 0;
+  let rejectCount = 0;
+  let pendingCount = 0;
+  an.forEach((a, i) => {
+    const remKey = `${a.balance || 'N'}_${a.compte}_${i}`;
+    const v = remarquesVal[remKey];
+    if (v?.status === 'validated') validCount++;
+    else if (v?.status === 'rejected') rejectCount++;
+    else pendingCount++;
+  });
 
   // Filtrage des contrôles bloquants et de vigilance non conformes
   const allControls = r.controls || [];
@@ -1738,7 +1978,7 @@ function renderResult(r, fresh) {
     `;
   }
 
-  // Tableau des contrôles avec repères visuels clairs
+  // Tableau des contrôles avec repères visuels clairs et décision client
   const ctl = allControls.map(c => {
     if (c.section) {
       return `<tr class="section" data-kind="section"><td colspan="5">${esc(c.code)} · ${esc(c.libelle)}</td></tr>`;
@@ -1751,6 +1991,24 @@ function renderResult(r, fresh) {
     const diag = CONTROLS_DIAGNOSTIC[c.code];
     const guideNote = isFail && diag ? `<div class="ctl-guide-note"><strong>Où corriger :</strong> ${esc(diag.cible)} – ${esc(diag.solution)}</div>` : '';
 
+    let ctlDecisionHtml = '';
+    if (!isBloquant && isFail) {
+      const ctlKey = `ctl_${c.code}`;
+      const ctlVal = remarquesVal[ctlKey];
+      if (ctlVal?.status === 'validated') {
+        ctlDecisionHtml = `<span class="badge ok" style="font-size:11px; margin-left:6px;" title="Vigilance validée par le client">✅ Validé</span> <button type="button" class="link small btn-rem-reset" data-rem-key="${ctlKey}" style="font-size:10px;">↺</button>`;
+      } else if (ctlVal?.status === 'rejected') {
+        ctlDecisionHtml = `<span class="badge warn" style="font-size:11px; margin-left:6px;" title="${esc(ctlVal.note || 'Écart justifié')}">❌ Dérogation</span> <button type="button" class="link small btn-rem-reset" data-rem-key="${ctlKey}" style="font-size:10px;">↺</button>`;
+      } else {
+        ctlDecisionHtml = `
+          <span class="btn-group-rem" style="margin-left:6px;">
+            <button type="button" class="btn-rem-action btn-rem-validate" data-rem-key="${ctlKey}" title="Valider ce point de vigilance">✔</button>
+            <button type="button" class="btn-rem-action btn-rem-reject" data-rem-key="${ctlKey}" title="Ne pas valider (dérogation justifiée)">✖</button>
+          </span>
+        `;
+      }
+    }
+
     return `<tr class="${rowClass}" data-kind="${filterKind}">
       <td><b>${esc(c.code)}</b></td>
       <td>
@@ -1759,7 +2017,12 @@ function renderResult(r, fresh) {
       </td>
       <td class="num">${esc(typeof c.n === 'number' ? fmt(c.n) : c.n ?? '')}</td>
       <td class="num">${esc(typeof c.n1 === 'number' ? fmt(c.n1) : c.n1 ?? '')}</td>
-      <td>${isOk ? '<span class="badge ok">OK</span>' : `<button type="button" class="badge ${isBloquant ? 'bad' : 'warn'} btn-diag-action" data-diag-code="${esc(c.code)}" style="font-weight:700; cursor:pointer; border:none; padding:4px 9px; font-size:12px; border-radius:4px; display:inline-flex; align-items:center; gap:4px;" title="Cliquer pour aller directement corriger">${isBloquant ? '⛔ À corriger ➜' : '⚠️ À vérifier ➜'}</button>`}</td>
+      <td>
+        <div style="display:flex; align-items:center; gap:6px;">
+          ${isOk ? '<span class="badge ok">OK</span>' : `<button type="button" class="badge ${isBloquant ? 'bad' : 'warn'} btn-diag-action" data-diag-code="${esc(c.code)}" style="font-weight:700; cursor:pointer; border:none; padding:4px 9px; font-size:12px; border-radius:4px; display:inline-flex; align-items:center; gap:4px;" title="Cliquer pour aller directement corriger">${isBloquant ? '⛔ À corriger ➜' : '⚠️ À vérifier ➜'}</button>`}
+          ${ctlDecisionHtml}
+        </div>
+      </td>
     </tr>`;
   }).join('');
 
@@ -1797,6 +2060,18 @@ function renderResult(r, fresh) {
     
     <div class="table-wrap"><table class="table" id="tableControls"><thead><tr><th>N°</th><th>Contrôle</th><th>N</th><th>N-1</th><th>Statut</th></tr></thead><tbody>${ctl}</tbody></table></div>
     ${an.length ? `<details style="margin-top:14px" id="detailsAnomalies" open><summary><span>⚠️ ${r.nbAnomalies || an.length} compte(s) signalé(s) dans les balances (SYSCOHADA)</span></summary>
+      <div class="rem-summary-bar">
+        <div class="rem-summary-counts">
+          <span class="count-item"><strong>Décisions client sur les remarques :</strong></span>
+          <span class="count-item"><span class="badge ok" id="countRemValid">✅ ${validCount} validée(s)</span></span>
+          <span class="count-item"><span class="badge warn" id="countRemReject">❌ ${rejectCount} non validée(s)</span></span>
+          <span class="count-item"><span class="badge neutral" id="countRemPending">⏳ ${pendingCount} en attente</span></span>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button type="button" class="btn sm outline" id="btnBulkValidateRemarques" title="Valider en masse toutes les remarques en attente">✔ Tout valider</button>
+          <button type="button" class="btn sm ghost" id="btnResetAllRemarques" title="Réinitialiser toutes les décisions">🔄 Réinitialiser</button>
+        </div>
+      </div>
       <div class="table-wrap"><table class="table">
         <thead>
           <tr>
@@ -1805,22 +2080,63 @@ function renderResult(r, fresh) {
             <th>Intitulé</th>
             <th style="text-align:right;">Solde</th>
             <th>Observation SYSCOHADA</th>
-            <th style="text-align:center; width:160px;">Action directe</th>
+            <th style="text-align:center; width:200px;">Validation client</th>
+            <th style="text-align:center; width:150px;">Action directe</th>
           </tr>
         </thead>
         <tbody>
-          ${an.map(a => `<tr>
-            <td><span class="badge neutral" style="font-weight:700;">${esc(a.balance || 'N')}</span></td>
-            <td><strong>${esc(a.compte)}</strong></td>
-            <td>${esc(a.intitule)}</td>
-            <td class="num font-mono">${fmt(a.solde)}</td>
-            <td><span style="color:#b91c1c; font-weight:500;">${esc(Array.isArray(a.messages) ? a.messages.join(' ; ') : (a.message || ''))}</span></td>
-            <td style="text-align:center;">
-              <button type="button" class="btn sm gold btn-fix-anomaly" data-bal-key="${esc(a.balance || 'N')}" data-acc="${esc(a.compte)}" title="Ouvrir l'éditeur directement sur ce compte">
-                ✏️ Corriger ce compte
-              </button>
-            </td>
-          </tr>`).join('')}
+          ${an.map((a, i) => {
+            const remKey = `${a.balance || 'N'}_${a.compte}_${i}`;
+            const v = remarquesVal[remKey];
+            let valCell = '';
+            let rowBg = '';
+            if (v?.status === 'validated') {
+              rowBg = 'style="background:#f0fdf4;"';
+              valCell = `
+                <div class="rem-status-box" style="align-items:center;">
+                  <span class="badge ok" style="font-weight:700;">✅ Remarque validée</span>
+                  <button type="button" class="link small btn-rem-reset" data-rem-key="${esc(remKey)}" style="font-size:11px; margin-top:2px;">Modifier</button>
+                </div>
+              `;
+            } else if (v?.status === 'rejected') {
+              rowBg = 'style="background:#fef2f2;"';
+              valCell = `
+                <div class="rem-status-box" style="align-items:center;">
+                  <span class="badge warn" style="font-weight:700;">❌ Non validée</span>
+                  ${v.note ? `<div class="small muted" style="font-size:11px; text-align:center;"><em>${esc(v.note)}</em></div>` : ''}
+                  <div style="display:flex; gap:4px; margin-top:2px;">
+                    <button type="button" class="link small btn-rem-note" data-rem-key="${esc(remKey)}" data-curr-note="${esc(v.note || '')}" style="font-size:11px;">✏️ Motif</button>
+                    <button type="button" class="link small btn-rem-reset" data-rem-key="${esc(remKey)}" style="font-size:11px;">Modifier</button>
+                  </div>
+                </div>
+              `;
+            } else {
+              valCell = `
+                <div class="btn-group-rem" style="justify-content:center;">
+                  <button type="button" class="btn-rem-action btn-rem-validate" data-rem-key="${esc(remKey)}" title="Valider la remarque (considérée comme prise en compte)">
+                    ✔ Valider
+                  </button>
+                  <button type="button" class="btn-rem-action btn-rem-reject" data-rem-key="${esc(remKey)}" title="Ne pas valider la remarque (écart justifié / dérogation)">
+                    ✖ Ne pas valider
+                  </button>
+                </div>
+              `;
+            }
+
+            return `<tr data-rem-row="${esc(remKey)}" ${rowBg}>
+              <td><span class="badge neutral" style="font-weight:700;">${esc(a.balance || 'N')}</span></td>
+              <td><strong>${esc(a.compte)}</strong></td>
+              <td>${esc(a.intitule)}</td>
+              <td class="num font-mono">${fmt(a.solde)}</td>
+              <td><span style="color:#b91c1c; font-weight:500;">${esc(Array.isArray(a.messages) ? a.messages.join(' ; ') : (a.message || ''))}</span></td>
+              <td class="td-rem-val" style="text-align:center;">${valCell}</td>
+              <td style="text-align:center;">
+                <button type="button" class="btn sm gold btn-fix-anomaly" data-bal-key="${esc(a.balance || 'N')}" data-acc="${esc(a.compte)}" title="Ouvrir l'éditeur directement sur ce compte">
+                  ✏️ Corriger ce compte
+                </button>
+              </td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table></div></details>` : ''}
     <p class="small muted" style="margin-top:14px">Le fichier reprend le modèle officiel <em>modele_etats_financiers_DGID (Nouveau)</em> : onglets inchangés, valeurs uniquement (aucune formule). Rappel : visa de l'expert-comptable ou du commissaire aux comptes requis pour le dépôt sur Sen-etafi.</p>`;

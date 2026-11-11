@@ -736,5 +736,72 @@ details .inner { padding: 4px 16px 16px; }
   }
 }
 
-
-
+/* --- Validation des remarques client (SYSCOHADA) --- */
+.rem-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.rem-summary-counts {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.rem-summary-counts .count-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.btn-group-rem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-rem-action {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  background: #fff;
+  white-space: nowrap;
+}
+.btn-rem-validate {
+  color: #166534;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.btn-rem-validate:hover {
+  background: #166534;
+  color: #fff;
+  border-color: #166534;
+}
+.btn-rem-reject {
+  color: #991b1b;
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+.btn-rem-reject:hover {
+  background: #991b1b;
+  color: #fff;
+  border-color: #991b1b;
+}
+.rem-status-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

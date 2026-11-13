@@ -6,19 +6,24 @@
 <title>FINSMART – États financiers DGID</title>
 <meta name="description" content="Déposez vos balances N et N-1 et téléchargez votre liasse SYSCOHADA Révisé au format du modèle DGID Sen-etafi, déjà remplie.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23123a32'/%3E%3Cpath d='M9 22V10h12M9 16h9' stroke='%23e9b949' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/styles.css?v=20261111_08">
+<link rel="stylesheet" href="css/styles.css?v=20261113_02">
 </head>
 <body>
 <header class="topbar">
   <div class="brand"><span class="logo" aria-hidden="true">F</span><span><strong>FINSMART</strong><small>États financiers SYSCOHADA · DGID</small></span></div>
-  <nav id="nav" hidden>
-    <button class="link" data-go="dashboard">Mes dossiers</button>
-    <button class="link" data-go="pricing">Tarifs & Crédits</button>
-    <button class="link" data-go="admin" id="navAdmin" hidden style="font-weight:700; color:var(--brand);"><span style="margin-right:3px;">⚙️</span>Administration</button>
-    <span class="badge gold" id="userCreditsBadge" style="cursor:pointer;" title="Cliquez pour recharger vos crédits">0 crédit</span>
-    <span class="who" id="whoami"></span>
-    <button class="btn ghost sm" id="btnLogout">Déconnexion</button>
-  </nav>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <button class="topbar-video-btn" id="btnTopbarVideo" type="button" title="Regarder la vidéo de démonstration FINSMART">
+      <span>▶</span> Démo Vidéo (3 min)
+    </button>
+    <nav id="nav" hidden>
+      <button class="link" data-go="dashboard">Mes dossiers</button>
+      <button class="link" data-go="pricing">Tarifs & Crédits</button>
+      <button class="link" data-go="admin" id="navAdmin" hidden style="font-weight:700; color:var(--brand);"><span style="margin-right:3px;">⚙️</span>Administration</button>
+      <span class="badge gold" id="userCreditsBadge" style="cursor:pointer;" title="Cliquez pour recharger vos crédits">0 crédit</span>
+      <span class="who" id="whoami"></span>
+      <button class="btn ghost sm" id="btnLogout">Déconnexion</button>
+    </nav>
+  </div>
 </header>
 
 <main id="app">
@@ -33,6 +38,35 @@
         <li><b>3</b><span>Téléchargez le modèle officiel <em>modele_etats_financiers_DGID</em> rempli, en valeurs, prêt pour Sen-etafi.</span></li>
       </ul>
       <p class="muted small">Bilan, compte de résultat, tableau des flux de trésorerie, fiches R1 à R4 et notes annexes, avec un rapport de contrôles de cohérence.</p>
+      
+      <!-- POINT REMARQUABLE : VIDÉO DE DÉMONSTRATION FINSMART -->
+      <div class="video-showcase">
+        <div class="video-showcase-header">
+          <div>
+            <span class="video-badge">▶ DÉMO VIDÉO</span>
+            <div class="video-showcase-title">Découvrez FINSMART en 3 minutes</div>
+            <p class="video-showcase-sub">Démonstration concrète du montage complet de la liasse fiscale DGID</p>
+          </div>
+          <span class="video-duration">⏱️ 03:00 · Full HD</span>
+        </div>
+        <div class="video-player-wrap">
+          <video id="heroFinsmartVideo" controls preload="metadata" playsinline>
+            <source src="finsmart-video.mp4" type="video/mp4">
+            <source src="finsmart%20video.mp4" type="video/mp4">
+            Votre navigateur ne supporte pas la lecture vidéo MP4.
+          </video>
+        </div>
+        <div class="video-showcase-footer">
+          <div class="video-features-list">
+            <span>Balances N & N-1</span>
+            <span>36 contrôles SYSCOHADA</span>
+            <span>55 onglets Sen-etafi</span>
+          </div>
+          <button type="button" class="btn sm ghost" id="btnExpandHeroVideo" title="Regarder en grand format">
+            ⛶ Agrandir
+          </button>
+        </div>
+      </div>
     </div>
     <div class="card auth-card">
       <div class="tabs" role="tablist">
@@ -63,6 +97,18 @@
       <div><h1>Mes dossiers</h1><p class="muted">Un dossier = une entreprise et un exercice.</p></div>
       <button class="btn primary" id="btnNew">+ Nouveau dossier</button>
     </div>
+    
+    <div class="dashboard-video-banner">
+      <div>
+        <span class="dashboard-video-badge">🎬 GUIDE & TUTORIEL VIDÉO</span>
+        <h3>Besoin d'aide pour préparer ou générer votre dossier ?</h3>
+        <p>Visionnez la démonstration guidée de 3 minutes pour maîtriser l'import de balance et la génération de la liasse officielle Sen-etafi.</p>
+      </div>
+      <button type="button" class="btn primary" id="btnDashboardVideo">
+        <span>▶</span> Regarder la vidéo (3 min)
+      </button>
+    </div>
+
     <div id="dossiersList" class="list"></div>
   </section>
 
@@ -300,6 +346,31 @@
   </section>
 </main>
 
+<!-- ======================= MODALE VIDÉO DÉMONSTRATION ======================= -->
+<div class="modal-overlay" id="modalVideo" hidden>
+  <div class="modal-box modal-xl" style="max-width:920px; padding:0; overflow:hidden; background:#000; border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,0.5);">
+    <div class="modal-head" style="background:#123a32; color:#fff; border-bottom:1px solid rgba(255,255,255,0.15); padding:14px 20px;">
+      <h2 style="color:#fff; font-size:16px; margin:0; display:flex; align-items:center; gap:8px;">
+        <span style="color:#e9b949;">🎬</span> Démonstration vidéo FINSMART (3 min)
+      </h2>
+      <button class="modal-close" data-close-modal style="color:#fff; font-size:24px;">&times;</button>
+    </div>
+    <div style="background:#000; width:100%; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center;">
+      <video id="modalFinsmartVideo" controls preload="metadata" playsinline style="width:100%; height:100%; object-fit:contain; display:block;">
+        <source src="finsmart-video.mp4" type="video/mp4">
+        <source src="finsmart%20video.mp4" type="video/mp4">
+        Votre navigateur ne supporte pas la lecture vidéo.
+      </video>
+    </div>
+    <div style="padding:14px 20px; background:#fff; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div style="font-size:13px; color:var(--ink-2);">
+        <strong>FINSMART – États financiers SYSCOHADA · DGID</strong> : Du dépôt de vos balances au fichier Excel officiel Sen-etafi.
+      </div>
+      <button class="btn ghost sm" data-close-modal>Fermer</button>
+    </div>
+  </div>
+</div>
+
 <!-- ======================= MODALE CHOIX DE GÉNÉRATION ======================= -->
 <div class="modal-overlay" id="modalPreGen" hidden>
   <div class="modal-box">
@@ -481,6 +552,6 @@
 <script src="vendor/supabase.js"></script>
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
-<script type="module" src="js/app.js?v=20261111_08"></script>
+<script type="module" src="js/app.js?v=20261113_02"></script>
 </body>
 </html>

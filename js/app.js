@@ -81,7 +81,11 @@ $('#formSignup').addEventListener('submit', async e => {
   });
   if (error) {
     console.error('Erreur Supabase Signup:', error);
-    return setMsg($('#authMsg'), error.message, 'err');
+    let msg = error.message;
+    if (msg.toLowerCase().includes('rate limit')) {
+      msg = 'Trop de tentatives d’inscription récentes (limite Supabase atteinte). Veuillez patienter quelques minutes ou contacter l’administrateur.';
+    }
+    return setMsg($('#authMsg'), msg, 'err');
   }
   if (data?.session) {
     setMsg($('#authMsg'), 'Compte créé avec succès ! Connexion…', 'ok');
@@ -1406,14 +1410,42 @@ function compute(payload) {
   });
 }
 // ------------------------------------------------------------------ modales & monétisation
+function openVideoModal() {
+  const mv = $('#modalVideo');
+  if (!mv) return;
+  mv.hidden = false;
+  const modalVid = $('#modalFinsmartVideo');
+  const heroVid = $('#heroFinsmartVideo');
+  if (modalVid) {
+    if (heroVid && heroVid.currentTime > 0 && !heroVid.paused) {
+      modalVid.currentTime = heroVid.currentTime;
+      heroVid.pause();
+    }
+    modalVid.play().catch(() => {});
+  }
+}
+
 function closeModals() {
   $('#modalPreGen').hidden = true;
   $('#modalPayment').hidden = true;
   const mb = $('#modalBalanceEditor');
   if (mb) mb.hidden = true;
+  const mv = $('#modalVideo');
+  if (mv) {
+    mv.hidden = true;
+    const modalVid = $('#modalFinsmartVideo');
+    if (modalVid) modalVid.pause();
+  }
 }
 $$('[data-close-modal]').forEach(b => b.addEventListener('click', closeModals));
-$('.modal-overlay')?.addEventListener('click', e => { if (e.target.classList.contains('modal-overlay')) closeModals(); });
+$$('.modal-overlay').forEach(el => el.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) closeModals();
+}));
+
+// Boutons d'ouverture de la vidéo de présentation FINSMART
+$('#btnTopbarVideo')?.addEventListener('click', openVideoModal);
+$('#btnDashboardVideo')?.addEventListener('click', openVideoModal);
+$('#btnExpandHeroVideo')?.addEventListener('click', openVideoModal);
 
 let currentMonetizationStatus = null;
 async function checkStep4Monetization() {

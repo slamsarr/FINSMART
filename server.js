@@ -21,6 +21,8 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
 };
 
 // ------------------------------------------------------------------ PayDunya Config
@@ -570,7 +572,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  fs.readFile(filePath, (err, data) => {
+  fs.stat(filePath, (err, stats) => {
     if (err) {
       if (err.code === 'ENOENT') {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -581,14 +583,49 @@ const server = http.createServer(async (req, res) => {
       }
       return;
     }
+
+    if (stats.isDirectory()) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
+
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-    res.writeHead(200, {
-      'Content-Type': contentType,
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-    });
-    res.end(data);
+    const range = req.headers.range;
+
+    // Support streaming pour la vidéo (HTTP 206 Partial Content)
+    if (range && (ext === '.mp4' || ext === '.webm')) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : stats.size - 1;
+
+      if (start >= stats.size || end >= stats.size) {
+        res.writeHead(416, { 'Content-Range': `bytes */${stats.size}` });
+        res.end();
+        return;
+      }
+
+      const chunkSize = (end - start) + 1;
+      const fileStream = fs.createReadStream(filePath, { start, end });
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${stats.size}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+      });
+      fileStream.pipe(res);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': stats.size,
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': ext === '.mp4' ? 'public, max-age=86400' : 'no-cache, no-store, must-revalidate',
+      });
+      fs.createReadStream(filePath).pipe(res);
+    }
   });
 });
 

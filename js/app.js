@@ -2,6 +2,7 @@
 import { SUPABASE_URL, SUPABASE_KEY, BRAND } from './config.js';
 import { parseBalance, checkSyscohadaRules, INFO_SECTIONS, INFO_TABLES, INFO_EXTRA, EFFECTIFS, nomFichier, fmt, BALANCE_COLUMNS } from './liasse.js';
 import { fillModele } from './xlsx-filler.js';
+import { renderFinancialAnalysisDashboard } from './financial-analysis/financial-dashboard.js';
 
 const sb = window.__SB_MOCK__ ? window.__SB_MOCK__() : window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = s => document.querySelector(s);
@@ -259,6 +260,8 @@ window.addEventListener('hashchange', route);
 async function route() {
   if (!state.user) return show('auth');
   const h = location.hash.replace(/^#\/?/, '');
+  if (h.startsWith('analysis/')) return renderAnalysisPage(h.split('/')[1]);
+  if (h === 'analysis') return renderAnalysisPage();
   if (h.startsWith('dossier/')) return openDossier(h.split('/')[1]);
   if (h === 'nouveau') return newDossier();
   if (h === 'pricing') return renderPricing();
@@ -290,6 +293,7 @@ async function renderDashboard() {
       <div><h3>${esc(d.companies?.nom || 'Entreprise')}</h3><div class="meta">NINEA ${esc(d.companies?.ninea || '—')} · Exercice clos le ${esc(dateFr(d.date_fin) || d.exercice)}</div></div>
       <div>${badge(d.statut)} ${ctl} ${typeBadge}<div class="meta">Mis à jour le ${esc(dateTimeFr(d.updated_at))}</div></div>
       <div class="acts">
+        ${d.generated_at ? `<button class="btn ghost sm" onclick="location.hash='#/analysis/${d.id}'" title="Consulter l'analyse financière 100 indicateurs">📊 Analyse</button>` : ''}
         ${liasse ? `<button class="btn gold sm" data-dl="${esc(liasse.storage_path)}" data-name="${esc(liasse.nom_original)}">Télécharger la liasse</button>` : ''}
         <button class="btn ghost sm" onclick="location.hash='#/dossier/${d.id}'">${d.generated_at ? 'Ouvrir' : 'Continuer'}</button>
       </div></article>`;
@@ -1637,6 +1641,7 @@ async function executeGeneration(mode) {
     await saveInfos(true);
     $('#progressTxt').textContent = 'Calcul des états et des contrôles…';
     const { values, results } = await compute({ engineUrl: ENGINE_URL, balN: d.balN.rows, balN1: d.balN1.rows, infos: d.infos });
+    d.lastValues = values;
     
     // 3. Remplissage du modèle Excel
     $('#progressTxt').textContent = 'Remplissage du modèle DGID…';
@@ -2238,7 +2243,11 @@ function renderResult(r, fresh) {
   $('#resultBox').innerHTML = `
     ${limitedBanner}
     <div class="status-banner ${cls}"><div><strong>${esc(title)}</strong><div class="small">Généré le ${esc(dateTimeFr(d.exercise?.generated_at || Date.now()))} · ${esc(r.fichier || '')}</div></div>
-      <button class="btn primary" id="btnDlLiasse">${isLimited ? 'Télécharger l\'évaluation (.xlsx)' : 'Télécharger la liasse complète (.xlsx)'}</button></div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <button class="btn gold" id="btnGoAnalysisFromDossier" style="font-weight:700;">📊 Analyse financière & Décisionnelle</button>
+        <button class="btn primary" id="btnDlLiasse">${isLimited ? 'Télécharger l\'évaluation (.xlsx)' : 'Télécharger la liasse complète (.xlsx)'}</button>
+      </div>
+    </div>
     
     ${diagnosticHtml}
 
@@ -2339,6 +2348,11 @@ function renderResult(r, fresh) {
     <p class="small muted" style="margin-top:14px">Le fichier reprend le modèle officiel <em>modele_etats_financiers_DGID (Nouveau)</em> : onglets inchangés, valeurs uniquement (aucune formule). Rappel : visa de l'expert-comptable ou du commissaire aux comptes requis pour le dépôt sur Sen-etafi.</p>`;
 
   // Écouteurs de téléchargement et déblocage
+  $('#btnGoAnalysisFromDossier')?.addEventListener('click', () => {
+    if (d.exercise?.id) location.hash = `#/analysis/${d.exercise.id}`;
+    else location.hash = '#/analysis';
+  });
+
   $('#btnDlLiasse').addEventListener('click', async () => {
     if (d.lastBlob) return downloadBlob(d.lastBlob.blob, d.lastBlob.name);
     const f = (await sb.from('exercise_files').select('*').eq('exercise_id', d.exercise.id).order('created_at', { ascending: false }).limit(1).maybeSingle()).data;
@@ -2712,6 +2726,179 @@ $$('[data-admin-tab]').forEach(tab => tab.addEventListener('click', () => {
   if (adminCurrentTab === 'credits') renderAdminCredits();
   if (adminCurrentTab === 'users') renderAdminUsers();
 }));
+
+// ------------------------------------------------------------------ Module Analyse Financière Intelligente Premium V1.0
+async function renderAnalysisPage(dossierId) {
+  show('analysis');
+  const view = $('#view-analysis');
+  if (!view) return;
+  view.innerHTML = '<div class="card" style="padding:40px; text-align:center;"><div class="spinner"></div><p style="margin-top:14px; font-weight:600; color:var(--brand);">Préparation de l\'analyse financière…</p></div>';
+
+  try {
+    const targetId = dossierId || state.dossier?.exercise?.id;
+
+    // Si le dossier actif correspond et a déjà ses valeurs calculées en mémoire
+    if (targetId && state.dossier?.exercise?.id === targetId && state.dossier?.lastValues) {
+      await renderFinancialAnalysisDashboard(view, {
+        values: state.dossier.lastValues,
+        infos: state.dossier.infos || {},
+        exercise: state.dossier.exercise,
+        company: state.dossier.company,
+        sb
+      });
+      return;
+    }
+
+    // Si un dossier spécifique est demandé
+    if (targetId) {
+      const { data: ex, error } = await sb.from('exercises')
+        .select('*, companies(*), exercise_files(*)')
+        .eq('id', targetId)
+        .maybeSingle();
+
+      if (error || !ex) {
+        view.innerHTML = `<div class="card"><p class="msg err">Dossier introuvable ou inaccessible.</p><button class="btn ghost sm" onclick="location.hash='#/dashboard'">← Retour aux dossiers</button></div>`;
+        return;
+      }
+
+      state.dossier = {
+        exercise: ex,
+        company: ex.companies,
+        infos: ex.infos || {},
+        balN: null,
+        balN1: null,
+        files: ex.exercise_files || []
+      };
+
+      const liasse = (ex.exercise_files || []).find(f => f.type === 'etats_complet_xlsx' || f.type === 'etats_gratuit_xlsx');
+      let wb = null;
+      let values = null;
+
+      if (liasse?.storage_path) {
+        try {
+          const { data: blobData, error: errDl } = await sb.storage.from('etats').download(liasse.storage_path);
+          if (!errDl && blobData) {
+            const buf = await blobData.arrayBuffer();
+            wb = window.XLSX.read(buf, { type: 'array', cellDates: false });
+          }
+        } catch (e) {
+          console.warn('Lecture du fichier liasse Excel:', e);
+        }
+      }
+
+      // Si pas de classeur Excel téléchargeable mais balances présentes, recalcul automatique
+      if (!wb) {
+        const balFiles = {
+          n: (ex.exercise_files || []).find(f => f.type === 'balance_n'),
+          n1: (ex.exercise_files || []).find(f => f.type === 'balance_n1')
+        };
+        if (balFiles.n && balFiles.n1) {
+          view.innerHTML = '<div class="card" style="padding:40px; text-align:center;"><div class="spinner"></div><p style="margin-top:14px; font-weight:600; color:var(--brand);">Calcul des états financiers et des 100 indicateurs…</p></div>';
+          const [resN, resN1] = await Promise.all([
+            sb.storage.from('balances').download(balFiles.n.storage_path),
+            sb.storage.from('balances').download(balFiles.n1.storage_path)
+          ]);
+          if (resN.data && resN1.data) {
+            const parsedN = parseBalance(await readSheet(new File([resN.data], balFiles.n.nom_original)), 'Balance N');
+            const parsedN1 = parseBalance(await readSheet(new File([resN1.data], balFiles.n1.nom_original)), 'Balance N-1');
+            const comp = await compute({ engineUrl: ENGINE_URL, balN: parsedN.rows, balN1: parsedN1.rows, infos: ex.infos || {} });
+            values = comp.values;
+            state.dossier.lastValues = values;
+          }
+        }
+      }
+
+      if (!wb && !values) {
+        view.innerHTML = `
+          <div class="card" style="text-align:center; padding:30px;">
+            <h3>États financiers non encore générés pour ce dossier</h3>
+            <p class="muted">L'analyse financière requiert la génération préalable des états financiers SYSCOHADA.</p>
+            <div style="display:flex; justify-content:center; gap:10px; margin-top:16px;">
+              <button class="btn primary" onclick="location.hash='#/dossier/${ex.id}'">Générer la liasse</button>
+              <button class="btn ghost" onclick="location.hash='#/dashboard'">Retour</button>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      await renderFinancialAnalysisDashboard(view, {
+        values,
+        wb,
+        infos: ex.infos || {},
+        exercise: ex,
+        company: ex.companies,
+        sb
+      });
+      return;
+    }
+
+    // Cas où aucun dossierId n'est fourni : liste des dossiers éligibles
+    const { data: dossiers, error: errD } = await sb.from('exercises')
+      .select('id, exercice, date_fin, statut, updated_at, generated_at, company_id, companies(nom, ninea, owner_id), exercise_files(type, storage_path)')
+      .order('updated_at', { ascending: false });
+
+    if (errD) {
+      view.innerHTML = `<div class="card"><p class="msg err">Erreur de chargement : ${esc(errD.message)}</p></div>`;
+      return;
+    }
+
+    const eligible = (dossiers || []).filter(d => (!state.profile.is_admin || (d.companies && d.companies.owner_id === state.user.id)) && !!d.generated_at);
+
+    if (!eligible.length) {
+      view.innerHTML = `
+        <div class="card empty" style="text-align:center; padding:50px 20px;">
+          <div style="font-size:48px; margin-bottom:12px;">📊</div>
+          <h2>Aucun état financier disponible pour l'analyse</h2>
+          <p class="muted" style="max-width:550px; margin:0 auto 20px auto;">
+            Pour accéder à l'Analyse Financière Intelligente Premium (100 indicateurs, diagnostic décisionnel, DuPont, simulateur N+1 et IA), créez un dossier et générez vos états financiers DGID.
+          </p>
+          <button class="btn primary" onclick="location.hash='#/nouveau'">+ Créer un nouveau dossier</button>
+        </div>
+      `;
+      return;
+    }
+
+    view.innerHTML = `
+      <div style="max-width:1100px; margin:0 auto;">
+        <div style="margin-bottom:24px;">
+          <div style="display:inline-flex; align-items:center; gap:6px; background:#fef3c7; color:#92400e; font-size:11.5px; font-weight:800; padding:3px 10px; border-radius:999px; text-transform:uppercase; margin-bottom:8px;">
+            ★ Module Décisionnel Premium V1.0
+          </div>
+          <h1 style="color:var(--brand); margin:0 0 6px 0;">Analyse Financière Intelligente</h1>
+          <p class="muted" style="margin:0;">Sélectionnez une entreprise et un exercice pour ouvrir son rapport d'analyse financière multi-dimensions :</p>
+        </div>
+
+        <div class="grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px;">
+          ${eligible.map(d => `
+            <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; transition:transform 0.15s ease, box-shadow 0.15s ease;">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                  <h3 style="margin:0; font-size:17px; color:var(--brand);">${esc(d.companies?.nom || 'Entreprise')}</h3>
+                  <span class="badge ok">Prêt pour analyse</span>
+                </div>
+                <div class="meta" style="font-size:12.5px; color:var(--muted); line-height:1.5;">
+                  NINEA : ${esc(d.companies?.ninea || '—')}<br>
+                  Exercice clos le : <strong>${esc(dateFr(d.date_fin) || d.exercice)}</strong>
+                </div>
+              </div>
+              <div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:11.5px; color:var(--muted);">Généré le ${esc(dateFr(d.generated_at))}</span>
+                <button class="btn gold sm" onclick="location.hash='#/analysis/${d.id}'" style="font-weight:700;">
+                  Ouvrir l'Analyse 📊
+                </button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+
+  } catch (err) {
+    console.error('Erreur renderAnalysisPage:', err);
+    view.innerHTML = `<div class="card"><p class="msg err">Erreur imprévue : ${esc(err.message)}</p></div>`;
+  }
+}
 
 async function renderAdmin() {
   show('admin');

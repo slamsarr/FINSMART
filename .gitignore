@@ -5,3 +5,7 @@ Thumbs.db
 *.log
 .env
 .env.local
+
+# Temporary packages
+FINSMART_Analyse_Financiere_Premium_V1.0_RC1*
+

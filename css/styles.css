@@ -966,3 +966,64 @@ details .inner { padding: 4px 16px 16px; }
   color: #166534;
 }
 
+/* ==========================================================================
+   MODULE ANALYSE FINANCIÈRE PREMIUM V1.0
+   ========================================================================== */
+.analysis-header {
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.analysis-score-banner {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.kpi-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.metric-row:hover {
+  background: #f8fafc;
+}
+
+@media print {
+  header, #nav, #navAnalysis, .tabs, .btn, #aiChatBox, #aiQuestionInput, #btnSendAiQuestion, .btn-suggest-q, .no-print, [data-go], .acts {
+    display: none !important;
+  }
+  body, main {
+    background: #fff !important;
+    color: #000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .view:not(#view-analysis) {
+    display: none !important;
+  }
+  #view-analysis {
+    display: block !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+  .analysis-header {
+    background: #123a32 !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    page-break-after: avoid;
+  }
+  .analysis-tab-pane {
+    display: block !important;
+    page-break-before: always;
+  }
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb !important;
+    page-break-inside: avoid;
+  }
+  .table {
+    font-size: 9.5pt !important;
+  }
+}
+
+

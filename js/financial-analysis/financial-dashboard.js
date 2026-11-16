@@ -67,18 +67,19 @@ function renderFullDashboardUI(container, data) {
   const score = controlsResult.healthScore;
   const { metricsMap } = metricsResult;
 
-  const ca = metricsMap.get('IND_01');
-  const croissCa = metricsMap.get('IND_02');
-  const va = metricsMap.get('IND_13');
-  const ebe = metricsMap.get('IND_15');
-  const rn = metricsMap.get('IND_21');
-  const margeNette = metricsMap.get('IND_22');
-  const frng = metricsMap.get('IND_41');
-  const bfre = metricsMap.get('IND_42');
-  const tn = metricsMap.get('IND_45');
-  const roe = metricsMap.get('IND_24');
-  const fcf = metricsMap.get('IND_68');
-  const dso = metricsMap.get('IND_72');
+  const ca = metricsMap.get('IND_01') || { valN: 0, valN1: 0 };
+  const croissCa = metricsMap.get('IND_02') || { valN: 0, valN1: 0 };
+  const va = metricsMap.get('IND_13') || { valN: 0, valN1: 0 };
+  const ebe = metricsMap.get('IND_15') || { valN: 0, valN1: 0 };
+  const re = metricsMap.get('IND_17') || { valN: 0, valN1: 0 };
+  const rn = metricsMap.get('IND_21') || { valN: 0, valN1: 0 };
+  const margeNette = metricsMap.get('IND_22') || { valN: 0, valN1: 0 };
+  const frng = metricsMap.get('IND_41') || { valN: 0, valN1: 0 };
+  const bfre = metricsMap.get('IND_42') || { valN: 0, valN1: 0 };
+  const tn = metricsMap.get('IND_45') || { valN: 0, valN1: 0 };
+  const roe = metricsMap.get('IND_24') || { valN: 0, valN1: 0 };
+  const fcf = metricsMap.get('IND_68') || { valN: 0, valN1: 0 };
+  const dso = metricsMap.get('IND_72') || { valN: 0, valN1: 0 };
 
   container.innerHTML = `
     <!-- EN-TÊTE DU TABLEAU DE BORD D'ANALYSE -->

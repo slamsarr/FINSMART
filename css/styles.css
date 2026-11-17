@@ -1181,6 +1181,59 @@ details .inner { padding: 4px 16px 16px; }
   background: #f8fafc;
 }
 
+/* ==========================================================================
+   CONSOLE D'ADMINISTRATION HAUT DE GAMME
+   ========================================================================== */
+.admin-badge-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #123a32 0%, #1e5a4d 100%);
+  color: #e9b949;
+  font-weight: 800;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(233, 185, 73, 0.35);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.admin-filter-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.admin-filter-pill {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.admin-filter-pill:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.admin-filter-pill.active {
+  background: #123a32;
+  border-color: #123a32;
+  color: #ffffff;
+  font-weight: 700;
+}
+
 @media print {
   header, #nav, #navAnalysis, .tabs, .btn, #aiChatBox, #aiQuestionInput, #btnSendAiQuestion, .btn-suggest-q, .no-print, [data-go], .acts {
     display: none !important;

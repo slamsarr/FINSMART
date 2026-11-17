@@ -6,7 +6,7 @@
 <title>FINSMART – États financiers DGID</title>
 <meta name="description" content="Déposez vos balances N et N-1 et téléchargez votre liasse SYSCOHADA Révisé au format du modèle DGID Sen-etafi, déjà remplie.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23123a32'/%3E%3Cpath d='M9 22V10h12M9 16h9' stroke='%23e9b949' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/styles.css?v=20261117_del_dossier_bal">
+<link rel="stylesheet" href="css/styles.css?v=20261117_admin_pro_v1">
 </head>
 <body>
 <header class="topbar">
@@ -259,96 +259,225 @@
 
   <!-- ======================= ADMIN ======================= -->
   <section id="view-admin" class="view" hidden>
-    <div class="card" style="margin-bottom:20px; background:linear-gradient(135deg, #064e3b 0%, #065f46 100%); color:#ffffff; border:none; box-shadow:0 4px 14px rgba(6,78,59,0.15); padding:18px 22px;">
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-        <span style="background:#eab308; color:#78350f; font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px;">👑 PRIVILÈGES SUPER-ADMINISTRATEUR ACTIFS</span>
-        <span style="font-size:13px; opacity:0.9;">Accès intégral à toutes les fonctions de la plateforme</span>
-      </div>
-      <h2 style="color:#ffffff; margin:0 0 10px 0; font-size:20px;">Tableau de bord de gestion & contrôle FINSMART</h2>
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:12px; margin-top:14px; font-size:13px;">
-        <div style="background:rgba(255,255,255,0.1); padding:10px 14px; border-radius:8px;">
-          <div style="font-size:14px; font-weight:700; margin-bottom:3px;">📁 Tous les dossiers clients</div>
-          <span style="opacity:0.85;">Consultez et téléchargez les balances brutes et liasses de l'ensemble des utilisateurs.</span>
-        </div>
-        <div style="background:rgba(255,255,255,0.1); padding:10px 14px; border-radius:8px;">
-          <div style="font-size:14px; font-weight:700; margin-bottom:3px;">💰 Validation des commandes</div>
-          <span style="opacity:0.85;">Validez les virements Wave / OM au 77 443 96 90 pour créditer les clients en 1 clic.</span>
-        </div>
-        <div style="background:rgba(255,255,255,0.1); padding:10px 14px; border-radius:8px;">
-          <div style="font-size:14px; font-weight:700; margin-bottom:3px;">⚡ Attribution manuelle</div>
-          <span style="opacity:0.85;">Rechargez des crédits à tout client (ou à votre propre compte) avec traçabilité d'audit.</span>
-        </div>
-        <div style="background:rgba(255,255,255,0.1); padding:10px 14px; border-radius:8px;">
-          <div style="font-size:14px; font-weight:700; margin-bottom:3px;">📜 Génération illimitée</div>
-          <span style="opacity:0.85;">Générez et débloquez la liasse officielle DGID (55 onglets) sans restriction de crédits.</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="page-head">
-      <div><h1>Espace Administration</h1><p class="muted">Supervision des dossiers, commandes et gestion des soldes clients.</p></div>
-      <div class="tabs" style="margin-bottom:0;" id="adminTabs">
-        <button class="tab active" data-admin-tab="dossiers">Dossiers clients</button>
-        <button class="tab" data-admin-tab="payments">Paiements & Commandes</button>
-        <button class="tab" data-admin-tab="credits">Attribution de crédits</button>
-        <button class="tab" data-admin-tab="users">Utilisateurs & Rôles</button>
-      </div>
-    </div>
-
-    <!-- Onglet 1 : Dossiers -->
-    <div id="adminTabDossiers">
-      <div style="margin-bottom:14px;"><input id="adminSearch" class="search" placeholder="Rechercher entreprise, NINEA, client…"></div>
-      <div class="kpis" id="adminKpis"></div>
-      <div class="table-wrap"><table class="table" id="adminTable"><thead><tr><th>Entreprise</th><th>Exercice</th><th>Client</th><th>Type</th><th>Statut</th><th>Contrôles</th><th>Mis à jour</th><th></th></tr></thead><tbody></tbody></table></div>
-    </div>
-
-    <!-- Onglet 2 : Paiements -->
-    <div id="adminTabPayments" hidden>
-      <div class="table-wrap"><table class="table" id="adminPaymentsTable"><thead><tr><th>Date</th><th>Client</th><th>Pack</th><th>Montant</th><th>Moyen / Réf</th><th>Téléphone</th><th>Statut</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
-    </div>
-
-    <!-- Onglet 3 : Attribution manuelle de crédits -->
-    <div id="adminTabCredits" hidden>
-      <div class="card" style="max-width:600px;">
-        <h2>Attribuer des crédits à un client</h2>
-        <p class="muted small">Ajoutez ou déduisez des crédits manuellement (ex: règlement par chèque, virement ou geste commercial).</p>
-        <form id="formAdminCredit" class="stack" style="margin-top:14px;">
-          <label>Sélectionner le client<select id="adminCreditUser" required></select></label>
-          <label>Nombre de crédits (positif pour ajouter, négatif pour déduire)<input type="number" id="adminCreditDelta" required value="5"></label>
-          <label>Motif / Justification<input id="adminCreditMotif" required placeholder="ex: Paiement par virement bancaire"></label>
-          <button class="btn primary" type="submit">Enregistrer l'ajustement</button>
-        </form>
-      </div>
-      <div class="card" style="margin-top:20px;">
-        <h2>Journal des mouvements de crédits (Audit)</h2>
-        <div class="table-wrap" style="margin-top:12px;"><table class="table" id="adminLedgerTable"><thead><tr><th>Date</th><th>Client</th><th>Mouvement</th><th>Solde après</th><th>Motif</th><th>Détails</th></tr></thead><tbody></tbody></table></div>
-    <!-- Onglet 4 : Utilisateurs & Rôles -->
-    <div id="adminTabUsers" hidden>
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
-          <div>
-            <h2 style="margin:0;">Comptes utilisateurs & Rôles d'accès</h2>
-            <p class="muted small" style="margin:4px 0 0;">Visualisez les clients inscrits, gérez les privilèges d'administrateur et surveillez les soldes.</p>
+    <!-- Bandeau Super-Admin Prestige -->
+    <div class="analysis-header card" style="margin-bottom:20px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
+        <div>
+          <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(233,185,73,0.18); border:1px solid #e9b949; color:#e9b949; font-size:11px; font-weight:800; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">
+            <span>👑</span> PRIVILÈGES SUPER-ADMINISTRATEUR ACTIFS
           </div>
-          <input id="adminUsersSearch" class="search" placeholder="Rechercher nom, email…" style="max-width:280px;">
+          <h1 style="color:#ffffff; font-size:24px; margin:0 0 4px 0; letter-spacing:-0.02em;">Console d'Administration & Pilotage FINSMART</h1>
+          <div style="font-size:13px; opacity:0.85;">
+            Supervision 360° des utilisateurs inscrits, des dossiers fiscaux, des flux de trésorerie Wave / OM et du journal des crédits.
+          </div>
         </div>
-        <div class="table-wrap">
-          <table class="table" id="adminUsersTable">
+
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button type="button" class="btn gold sm" id="btnAdminExportAllUsers" style="display:inline-flex; align-items:center; gap:6px;" title="Exporter la liste de tous les utilisateurs inscrits en fichier Excel">
+            <span>📥</span> Exporter les inscrits (.xlsx)
+          </button>
+          <button type="button" class="btn ghost sm" data-go="dashboard" style="color:#fff; border-color:rgba(255,255,255,0.3); display:inline-flex; align-items:center; gap:6px;">
+            <span>←</span> Retour à mes dossiers
+          </button>
+        </div>
+      </div>
+
+      <!-- Bandeau KPI Global Admin -->
+      <div class="analysis-score-banner" style="margin-top:20px; padding-top:18px; border-top:1px solid rgba(255,255,255,0.12); display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px;">
+        <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:11px; text-transform:uppercase; color:rgba(255,255,255,0.7); font-weight:700;">Utilisateurs Inscrits</div>
+          <div style="font-size:20px; font-weight:800; color:#fff;" id="adminKpiTotalUsers">—</div>
+          <div style="font-size:11px; color:#e9b949;" id="adminKpiNewUsers">—</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:11px; text-transform:uppercase; color:rgba(255,255,255,0.7); font-weight:700;">Dossiers & Entreprises</div>
+          <div style="font-size:20px; font-weight:800; color:#fff;" id="adminKpiTotalDossiers">—</div>
+          <div style="font-size:11px; color:rgba(255,255,255,0.75);" id="adminKpiTotalCompanies">—</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:11px; text-transform:uppercase; color:rgba(255,255,255,0.7); font-weight:700;">Liasses DGID Générées</div>
+          <div style="font-size:20px; font-weight:800; color:#fff;" id="adminKpiTotalGen">—</div>
+          <div style="font-size:11px; color:#34d399;" id="adminKpiGenFull">—</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:11px; text-transform:uppercase; color:rgba(255,255,255,0.7); font-weight:700;">Chiffre d'affaires & Flux</div>
+          <div style="font-size:20px; font-weight:800; color:#e9b949;" id="adminKpiTotalRevenue">—</div>
+          <div style="font-size:11px; color:rgba(255,255,255,0.85);" id="adminKpiPendingPays">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barre d'onglets de navigation Admin -->
+    <div class="analysis-tabs-nav" id="adminTabsNav">
+      <button type="button" class="analysis-tab-btn active" data-admin-tab="users">
+        <span>👥</span> Utilisateurs Inscrits <span class="badge ok" id="adminBadgeUsersCount" style="margin-left:4px; font-size:11px;">0</span>
+      </button>
+      <button type="button" class="analysis-tab-btn" data-admin-tab="dossiers">
+        <span>📁</span> Dossiers Clients <span class="badge neutral" id="adminBadgeDossiersCount" style="margin-left:4px; font-size:11px;">0</span>
+      </button>
+      <button type="button" class="analysis-tab-btn" data-admin-tab="payments">
+        <span>💳</span> Paiements & Commandes <span class="badge warn" id="adminBadgePayPending" style="display:none; margin-left:4px; font-size:11px;">0</span>
+      </button>
+      <button type="button" class="analysis-tab-btn" data-admin-tab="credits">
+        <span>⚡</span> Attribution & Journal des Crédits
+      </button>
+    </div>
+
+    <!-- Onglet 1 : Utilisateurs Inscrits -->
+    <div id="adminTabUsers">
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+          <div>
+            <h2 style="margin:0 0 4px 0; font-size:19px;">Répertoire des Utilisateurs Inscrits</h2>
+            <p class="muted small" style="margin:0;">Visualisez l'ensemble des comptes créés, leur date d'inscription, leur activité et gérez leurs rôles et soldes.</p>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <input id="adminUsersSearch" class="search" placeholder="🔍 Rechercher nom, email, téléphone…" style="min-width:280px;">
+            <button type="button" class="btn sm outline" id="btnRefreshUsers" title="Rafraîchir la liste des utilisateurs">🔄 Actualiser</button>
+          </div>
+        </div>
+
+        <!-- Filtres rapides -->
+        <div class="admin-filter-bar">
+          <span style="font-size:12px; font-weight:700; color:var(--muted); margin-right:4px;">Filtrer :</span>
+          <button type="button" class="admin-filter-pill active" data-user-filter="all">Tous (<span id="countFilterAll">0</span>)</button>
+          <button type="button" class="admin-filter-pill" data-user-filter="clients">Clients (<span id="countFilterClients">0</span>)</button>
+          <button type="button" class="admin-filter-pill" data-user-filter="admins">Admins (<span id="countFilterAdmins">0</span>)</button>
+          <button type="button" class="admin-filter-pill" data-user-filter="credits">Avec crédits &gt; 0 (<span id="countFilterCredits">0</span>)</button>
+          <button type="button" class="admin-filter-pill" data-user-filter="recent">Inscrits récents (&lt; 7j) (<span id="countFilterRecent">0</span>)</button>
+          <button type="button" class="admin-filter-pill" data-user-filter="active">Avec dossiers créés (<span id="countFilterActive">0</span>)</button>
+        </div>
+
+        <div class="analysis-table-wrap" style="margin-top:16px;">
+          <table class="analysis-table" id="adminUsersTable">
             <thead>
               <tr>
-                <th>Utilisateur</th>
-                <th>Email</th>
-                <th>Téléphone</th>
-                <th>Solde Crédits</th>
-                <th>Rôle Actuel</th>
-                <th>Action</th>
+                <th style="min-width:220px;">Utilisateur</th>
+                <th style="min-width:220px;">Contact (Email / Téléphone)</th>
+                <th style="min-width:140px;">Date d'inscription</th>
+                <th style="min-width:160px;">Activité sur la plateforme</th>
+                <th style="min-width:120px; text-align:center;">Solde Crédits</th>
+                <th style="min-width:130px; text-align:center;">Rôle</th>
+                <th style="min-width:200px; text-align:right;">Actions</th>
               </tr>
             </thead>
-            <tbody></tbody>
+            <tbody>
+              <!-- Injecté dynamiquement par drawAdminUsers -->
+            </tbody>
           </table>
         </div>
       </div>
     </div>
+
+    <!-- Onglet 2 : Dossiers Clients -->
+    <div id="adminTabDossiers" hidden>
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0 0 4px 0; font-size:19px;">Supervision de tous les dossiers clients</h2>
+            <p class="muted small" style="margin:0;">Consultez, téléchargez et auditez les balances et liasses fiscales déposées.</p>
+          </div>
+          <input id="adminSearch" class="search" placeholder="🔍 Rechercher entreprise, NINEA, client…" style="min-width:280px;">
+        </div>
+
+        <div class="analysis-table-wrap">
+          <table class="analysis-table" id="adminTable">
+            <thead>
+              <tr>
+                <th>Entreprise</th>
+                <th>Exercice</th>
+                <th>Client Propriétaire</th>
+                <th>Version</th>
+                <th>Statut</th>
+                <th>Contrôles</th>
+                <th>Dernière modif.</th>
+                <th style="text-align:right;">Fichiers & Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Injecté dynamiquement par drawAdmin -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Onglet 3 : Paiements & Commandes -->
+    <div id="adminTabPayments" hidden>
+      <div class="card" style="margin-bottom:20px;">
+        <div style="margin-bottom:16px;">
+          <h2 style="margin:0 0 4px 0; font-size:19px;">Commandes et Flux de Paiement (Wave / Orange Money / Free)</h2>
+          <p class="muted small" style="margin:0;">Validez les règlements reçus au <strong>77 443 96 90</strong> pour créditer instantanément le compte du client.</p>
+        </div>
+        <div class="analysis-table-wrap">
+          <table class="analysis-table" id="adminPaymentsTable">
+            <thead>
+              <tr>
+                <th>Date / Heure</th>
+                <th>Client</th>
+                <th>Formule choisie</th>
+                <th>Montant</th>
+                <th>Moyen & Référence</th>
+                <th>N° de paiement</th>
+                <th>Statut</th>
+                <th style="text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Injecté dynamiquement par renderAdminPayments -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Onglet 4 : Attribution manuelle de crédits & Audit -->
+    <div id="adminTabCredits" hidden>
+      <div class="grid2" style="align-items:start;">
+        <div class="card">
+          <h2>⚡ Recharger / Ajuster des crédits manuellement</h2>
+          <p class="muted small">Ajoutez ou déduisez des crédits manuellement avec motif d'audit (ex: règlement chèque, virement bancaire, test ou geste commercial).</p>
+          <form id="formAdminCredit" class="stack" style="margin-top:14px;">
+            <label>Sélectionner le compte client *<select id="adminCreditUser" required></select></label>
+            <label>Nombre de crédits à attribuer (positif pour ajouter, négatif pour déduire) *<input type="number" id="adminCreditDelta" required value="5" step="1"></label>
+            <label>Motif de l'opération (Audit) *<input id="adminCreditMotif" required placeholder="ex: Paiement par virement bancaire / Geste commercial"></label>
+            <button class="btn primary" type="submit" style="font-weight:700;">💾 Enregistrer l'ajustement</button>
+          </form>
+        </div>
+
+        <div class="card" style="background:#f8fafc;">
+          <h3>ℹ️ Règles d'attribution de crédits</h3>
+          <ul style="font-size:13px; line-height:1.6; color:#475569; padding-left:18px; margin:10px 0 0 0;">
+            <li><strong>1 crédit</strong> permet de générer 1 liasse complète officielle DGID (55 onglets Excel).</li>
+            <li>Les attributions manuelles sont <strong>tracées de manière permanente</strong> dans le grand livre d'audit (Credit Ledger).</li>
+            <li>Le solde du client est mis à jour immédiatement en temps réel.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
+        <h2>Journal des mouvements de crédits (Audit Ledger)</h2>
+        <p class="muted small">Historique immuable de toutes les recharges, déductions et consommations de crédits.</p>
+        <div class="analysis-table-wrap" style="margin-top:12px;">
+          <table class="analysis-table" id="adminLedgerTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Mouvement</th>
+                <th>Nouveau solde</th>
+                <th>Motif</th>
+                <th>Détails & Réf</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Injecté dynamiquement par renderAdminCredits -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
   </section>
 
   <!-- ======================= ANALYSE FINANCIÈRE PREMIUM ======================= -->
@@ -566,6 +695,6 @@
 <script src="vendor/supabase.js"></script>
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
-<script type="module" src="js/app.js?v=20261117_del_dossier_bal"></script>
+<script type="module" src="js/app.js?v=20261117_admin_pro_v1"></script>
 </body>
 </html>

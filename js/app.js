@@ -2887,20 +2887,81 @@ $('#btnSubmitPayment').addEventListener('click', async () => {
 
 // ------------------------------------------------------------------ administration
 let adminRows = [];
-let adminCurrentTab = 'dossiers';
+let adminUsersList = [];
+let adminCurrentTab = 'users';
+let adminUsersFilter = 'all';
+
+function timeAgoFr(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const diffMs = Date.now() - d.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return "À l'instant";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `Il y a ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `Il y a ${diffH} h`;
+  const diffJ = Math.floor(diffH / 24);
+  if (diffJ === 1) return 'Hier';
+  if (diffJ < 30) return `Il y a ${diffJ} j`;
+  const diffMois = Math.floor(diffJ / 30);
+  if (diffMois < 12) return `Il y a ${diffMois} mois`;
+  return `Il y a ${Math.floor(diffMois / 12)} an(s)`;
+}
+
+function getInitials(name, email) {
+  const src = (name || email || '').trim();
+  if (!src) return 'FS';
+  const parts = src.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return src.slice(0, 2).toUpperCase();
+}
+
+function exportUsersList() {
+  if (!adminUsersList || !adminUsersList.length) {
+    toast('Aucun utilisateur à exporter.', true);
+    return;
+  }
+  const aoa = [
+    ['Nom complet', 'Email', 'Téléphone', 'Date inscription', 'Rôle', 'Solde Crédits', 'Entreprises créées', 'Dossiers créés', 'Liasses générées'],
+    ...adminUsersList.map(u => [
+      u.nom_complet || 'Non renseigné',
+      u.email || '',
+      u.telephone || '',
+      u.created_at ? dateTimeFr(u.created_at) : '',
+      u.is_admin ? 'Super-Admin' : 'Client',
+      u.credits_balance || 0,
+      u.nbCompanies || 0,
+      u.nbExercises || 0,
+      u.nbGenerated || 0
+    ])
+  ];
+  const ws = window.XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 25 }, { wch: 30 }, { wch: 18 }, { wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Inscrits');
+  const now = new Date().toISOString().slice(0, 10);
+  window.XLSX.writeFile(wb, `FINSMART_Utilisateurs_Inscrits_${now}.xlsx`);
+  toast('📥 Fichier Excel des inscrits téléchargé avec succès !');
+}
+
+function switchAdminTab(targetTab) {
+  adminCurrentTab = targetTab;
+  $$('[data-admin-tab]').forEach(t => t.classList.toggle('active', t.dataset.adminTab === targetTab));
+  const tabUsers = $('#adminTabUsers'); if (tabUsers) tabUsers.hidden = targetTab !== 'users';
+  const tabDossiers = $('#adminTabDossiers'); if (tabDossiers) tabDossiers.hidden = targetTab !== 'dossiers';
+  const tabPayments = $('#adminTabPayments'); if (tabPayments) tabPayments.hidden = targetTab !== 'payments';
+  const tabCredits = $('#adminTabCredits'); if (tabCredits) tabCredits.hidden = targetTab !== 'credits';
+
+  if (targetTab === 'users') drawAdminUsers();
+  if (targetTab === 'dossiers') drawAdmin();
+  if (targetTab === 'payments') renderAdminPayments();
+  if (targetTab === 'credits') renderAdminCredits();
+}
 
 $$('[data-admin-tab]').forEach(tab => tab.addEventListener('click', () => {
-  $$('[data-admin-tab]').forEach(t => t.classList.toggle('active', t === tab));
-  adminCurrentTab = tab.dataset.adminTab;
-  $('#adminTabDossiers').hidden = adminCurrentTab !== 'dossiers';
-  $('#adminTabPayments').hidden = adminCurrentTab !== 'payments';
-  $('#adminTabCredits').hidden = adminCurrentTab !== 'credits';
-  const tabUsers = $('#adminTabUsers');
-  if (tabUsers) tabUsers.hidden = adminCurrentTab !== 'users';
-
-  if (adminCurrentTab === 'payments') renderAdminPayments();
-  if (adminCurrentTab === 'credits') renderAdminCredits();
-  if (adminCurrentTab === 'users') renderAdminUsers();
+  switchAdminTab(tab.dataset.adminTab);
 }));
 
 // ------------------------------------------------------------------ Module Analyse Financière Intelligente Premium V1.0
@@ -3078,67 +3139,146 @@ async function renderAnalysisPage(dossierId) {
 
 async function renderAdmin() {
   show('admin');
-  const tb = $('#adminTable tbody'); tb.innerHTML = '<tr><td colspan="8">Chargement…</td></tr>';
-  const { data, error } = await sb.from('exercises')
-    .select('id, exercice, date_fin, statut, is_full_version, generation_type, updated_at, generated_at, rapport, created_by, company_id, companies(nom, ninea, telephone, email_contact), exercise_files(type, storage_path, nom_original)')
-    .order('updated_at', { ascending: false });
-  if (error) { tb.innerHTML = `<tr><td colspan="8" class="msg err">${esc(error.message)}</td></tr>`; return; }
+  const tb = $('#adminTable tbody'); if (tb) tb.innerHTML = '<tr><td colspan="8">Chargement des dossiers…</td></tr>';
+  const tbUsers = $('#adminUsersTable tbody'); if (tbUsers) tbUsers.innerHTML = '<tr><td colspan="7">Chargement des utilisateurs…</td></tr>';
 
-  // Charge les profils clients de manière découplée (robuste contre toute anomalie de foreign keys)
-  const userIds = [...new Set((data || []).map(r => r.created_by).filter(Boolean))];
-  const profilesMap = {};
-  if (userIds.length) {
-    const { data: profs } = await sb.from('profiles').select('id, nom_complet, email, telephone').in('id', userIds);
+  try {
+    const [
+      { data: exData, error: exErr },
+      { data: profs, error: profErr },
+      { data: compData },
+      { data: paysData }
+    ] = await Promise.all([
+      sb.from('exercises').select('id, exercice, date_fin, statut, is_full_version, generation_type, updated_at, generated_at, rapport, created_by, company_id, companies(nom, ninea, telephone, email_contact), exercise_files(type, storage_path, nom_original)').order('updated_at', { ascending: false }),
+      sb.from('profiles').select('*').order('created_at', { ascending: false }),
+      sb.from('companies').select('id, owner_id'),
+      sb.from('payments').select('id, statut, montant_fcfa, user_id')
+    ]);
+
+    if (exErr) { if (tb) tb.innerHTML = `<tr><td colspan="8" class="msg err">${esc(exErr.message)}</td></tr>`; }
+    if (profErr) { if (tbUsers) tbUsers.innerHTML = `<tr><td colspan="7" class="msg err">${esc(profErr.message)}</td></tr>`; }
+
+    // Dictionnaire des profils
+    const profilesMap = {};
     (profs || []).forEach(p => { profilesMap[p.id] = p; });
+
+    // Dossiers enrichis avec profils
+    adminRows = (exData || []).map(r => ({
+      ...r,
+      profiles: profilesMap[r.created_by] || {}
+    }));
+
+    // Calcul des statistiques par utilisateur
+    const exercisesByUser = {};
+    (exData || []).forEach(e => {
+      if (e.created_by) {
+        exercisesByUser[e.created_by] ||= [];
+        exercisesByUser[e.created_by].push(e);
+      }
+    });
+
+    const companiesByUser = {};
+    (compData || []).forEach(c => {
+      if (c.owner_id) {
+        companiesByUser[c.owner_id] ||= [];
+        companiesByUser[c.owner_id].push(c);
+      }
+    });
+
+    adminUsersList = (profs || []).map(u => {
+      const uEx = exercisesByUser[u.id] || [];
+      const uCo = companiesByUser[u.id] || [];
+      return {
+        ...u,
+        nbExercises: uEx.length,
+        nbGenerated: uEx.filter(e => e.generated_at).length,
+        nbCompanies: uCo.length
+      };
+    });
+
+    // Métriques globales
+    const totalUsers = adminUsersList.length;
+    const now = Date.now();
+    const recentUsers = adminUsersList.filter(u => u.created_at && (now - new Date(u.created_at).getTime()) < 7 * 86400 * 1000).length;
+    const totalDossiers = adminRows.length;
+    const totalGen = adminRows.filter(r => r.generated_at).length;
+    const totalGenFull = adminRows.filter(r => r.is_full_version).length;
+    const totalCompanies = (compData || []).length;
+    const pendingPays = (paysData || []).filter(p => p.statut === 'pending').length;
+    const totalRevenue = (paysData || []).filter(p => p.statut === 'completed').reduce((sum, p) => sum + (p.montant_fcfa || 0), 0);
+
+    // Mise à jour de l'en-tête KPI
+    const kpiTotalUsers = $('#adminKpiTotalUsers'); if (kpiTotalUsers) kpiTotalUsers.textContent = `${totalUsers} comptes`;
+    const kpiNewUsers = $('#adminKpiNewUsers'); if (kpiNewUsers) kpiNewUsers.textContent = `+${recentUsers} inscrit(s) cette semaine`;
+    const kpiTotalDossiers = $('#adminKpiTotalDossiers'); if (kpiTotalDossiers) kpiTotalDossiers.textContent = `${totalDossiers} dossiers`;
+    const kpiTotalCompanies = $('#adminKpiTotalCompanies'); if (kpiTotalCompanies) kpiTotalCompanies.textContent = `${totalCompanies} entreprises gérées`;
+    const kpiTotalGen = $('#adminKpiTotalGen'); if (kpiTotalGen) kpiTotalGen.textContent = `${totalGen} liasses DGID`;
+    const kpiGenFull = $('#adminKpiGenFull'); if (kpiGenFull) kpiGenFull.textContent = `${totalGenFull} complètes officielles`;
+    const kpiTotalRevenue = $('#adminKpiTotalRevenue'); if (kpiTotalRevenue) kpiTotalRevenue.textContent = `${fmt(totalRevenue)} FCFA`;
+    const kpiPendingPays = $('#adminKpiPendingPays'); if (kpiPendingPays) kpiPendingPays.textContent = pendingPays ? `${pendingPays} commande(s) en attente` : 'Flux de paiement à jour';
+
+    // Mise à jour des badges des onglets
+    const bUsers = $('#adminBadgeUsersCount'); if (bUsers) bUsers.textContent = totalUsers;
+    const bDossiers = $('#adminBadgeDossiersCount'); if (bDossiers) bDossiers.textContent = totalDossiers;
+    const bPays = $('#adminBadgePayPending');
+    if (bPays) {
+      if (pendingPays > 0) {
+        bPays.style.display = 'inline-block';
+        bPays.textContent = `${pendingPays} en attente`;
+      } else {
+        bPays.style.display = 'none';
+      }
+    }
+
+    // Sélecteur de compte client dans l'onglet Attribution de crédits
+    const selCreditUser = $('#adminCreditUser');
+    if (selCreditUser) {
+      selCreditUser.innerHTML = adminUsersList.map(u => `<option value="${u.id}">${esc(u.nom_complet || 'Sans nom')} – ${esc(u.email || '')} (Solde : ${u.credits_balance || 0} crédits)</option>`).join('');
+    }
+
+    // Affichage des vues
+    drawAdminUsers();
+    drawAdmin();
+  } catch (err) {
+    console.error('Erreur renderAdmin:', err);
+    toast('Erreur chargement administration : ' + err.message, true);
   }
-
-  adminRows = (data || []).map(r => ({
-    ...r,
-    profiles: profilesMap[r.created_by] || {}
-  }));
-
-  const clients = new Set(adminRows.map(r => r.profiles?.email).filter(Boolean)).size;
-  const gen = adminRows.filter(r => r.generated_at).length, prets = adminRows.filter(r => r.rapport && r.rapport.pret).length;
-  
-  // Récupère aussi les commandes en attente de validation
-  const { data: pendingPays } = await sb.from('payments').select('id').eq('statut', 'pending');
-  const pendingCount = pendingPays?.length || 0;
-
-  const tabBtn = $('[data-admin-tab="payments"]');
-  if (tabBtn) {
-    tabBtn.innerHTML = `Paiements & Commandes ${pendingCount ? `<span class="badge warn" style="margin-left:6px; font-size:11px;">${pendingCount} en attente</span>` : ''}`;
-  }
-
-  $('#adminKpis').innerHTML = [
-    ['Clients', clients],
-    ['Dossiers', adminRows.length],
-    ['Liasses générées', gen],
-    ['Commandes en attente', `<span style="color:${pendingCount ? '#b45309' : 'inherit'}">${pendingCount}</span>`]
-  ].map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
-  drawAdmin();
 }
 
 function drawAdmin() {
-  const q = $('#adminSearch').value.trim().toLowerCase();
+  const q = ($('#adminSearch')?.value || '').trim().toLowerCase();
   const rows = adminRows.filter(r => !q || [r.companies?.nom, r.companies?.ninea, r.profiles?.nom_complet, r.profiles?.email].join(' ').toLowerCase().includes(q));
-  $('#adminTable tbody').innerHTML = rows.map(r => {
+  const tb = $('#adminTable tbody');
+  if (!tb) return;
+
+  tb.innerHTML = rows.map(r => {
     const files = r.exercise_files || [];
     const fb = (type, label, bucket) => { const f = files.find(x => x.type === type); return f ? `<button class="btn ghost sm" data-b="${bucket}" data-p="${esc(f.storage_path)}" data-n="${esc(f.nom_original)}">${label}</button>` : ''; };
     const rp = r.rapport || {};
     const genTypeBadge = r.is_full_version ? '<span class="badge ok">Complète</span>' : (r.generation_type === 'free' ? '<span class="badge warn">Évaluation</span>' : '<span class="badge neutral">—</span>');
-    return `<tr><td><b>${esc(r.companies?.nom)}</b><div class="small muted">NINEA ${esc(r.companies?.ninea || '—')}</div></td>
+    return `<tr>
+      <td><b>${esc(r.companies?.nom || 'Entreprise')}</b><div class="small muted">NINEA ${esc(r.companies?.ninea || '—')}</div></td>
       <td>${esc(dateFr(r.date_fin) || r.exercice)}</td>
-      <td>${esc(r.profiles?.nom_complet || '')}<div class="small muted">${esc(r.profiles?.email || '')} ${esc(r.profiles?.telephone || '')}</div></td>
+      <td>${esc(r.profiles?.nom_complet || '')}<div class="small muted"><a href="mailto:${esc(r.profiles?.email || '')}" style="color:inherit;">${esc(r.profiles?.email || '')}</a> ${esc(r.profiles?.telephone || '')}</div></td>
       <td>${genTypeBadge}</td>
       <td><select data-statut="${r.id}">${Object.entries(STATUTS).map(([k, [l]]) => `<option value="${k}" ${k === r.statut ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
       <td>${r.generated_at ? (rp.bloquants ? `<span class="badge bad">${rp.bloquants} bloquant(s)</span>` : '<span class="badge ok">OK</span>') + (rp.vigilance ? ` <span class="badge warn">${rp.vigilance} vigilance</span>` : '') : '<span class="muted small">non générée</span>'}</td>
       <td class="small">${esc(dateTimeFr(r.updated_at))}</td>
-      <td style="white-space:nowrap">${fb('balance_n', 'Bal. N', 'balances')} ${fb('balance_n1', 'Bal. N-1', 'balances')} ${fb('etats_complet_xlsx', 'Liasse', 'etats') || fb('etats_gratuit_xlsx', 'Liasse', 'etats')} <button type="button" class="btn danger sm btn-admin-del-ex" data-id="${r.id}" data-name="${esc(r.companies?.nom || 'Dossier')}" data-ex="${esc(dateFr(r.date_fin) || r.exercice)}" title="Supprimer définitivement ce dossier">🗑️</button></td></tr>`;
-  }).join('') || '<tr><td colspan="8" class="muted">Aucun dossier.</td></tr>';
+      <td style="white-space:nowrap; text-align:right;">
+        <div style="display:inline-flex; gap:6px; align-items:center;">
+          ${r.generated_at ? `<button type="button" class="btn ghost sm" onclick="location.hash='#/analysis/${r.id}'" title="Consulter l'analyse financière 100 indicateurs">📊 Analyse</button>` : ''}
+          ${fb('balance_n', 'Bal. N', 'balances')}
+          ${fb('balance_n1', 'Bal. N-1', 'balances')}
+          ${fb('etats_complet_xlsx', 'Liasse', 'etats') || fb('etats_gratuit_xlsx', 'Liasse', 'etats')}
+          <button type="button" class="btn danger sm btn-admin-del-ex" data-id="${r.id}" data-name="${esc(r.companies?.nom || 'Dossier')}" data-ex="${esc(dateFr(r.date_fin) || r.exercice)}" title="Supprimer définitivement ce dossier">🗑️</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted" style="text-align:center; padding:24px;">Aucun dossier trouvé.</td></tr>';
 }
 
-$('#adminSearch').addEventListener('input', drawAdmin);
-$('#adminTable').addEventListener('click', async e => {
+$('#adminSearch')?.addEventListener('input', drawAdmin);
+$('#adminTable')?.addEventListener('click', async e => {
   const b = e.target.closest('[data-p]'); if (b) downloadStored(b.dataset.b, b.dataset.p, b.dataset.n);
   const del = e.target.closest('.btn-admin-del-ex');
   if (del) {
@@ -3146,7 +3286,7 @@ $('#adminTable').addEventListener('click', async e => {
     await renderAdmin();
   }
 });
-$('#adminTable').addEventListener('change', async e => {
+$('#adminTable')?.addEventListener('change', async e => {
   const s = e.target.closest('[data-statut]'); if (!s) return;
   const { error } = await sb.from('exercises').update({ statut: s.value }).eq('id', s.dataset.statut);
   toast(error ? error.message : 'Statut mis à jour.', !!error);
@@ -3350,47 +3490,138 @@ $('#formAdminCredit')?.addEventListener('submit', async e => {
   }
 });
 
-let adminUsersList = [];
 async function renderAdminUsers() {
-  const tb = $('#adminUsersTable tbody');
-  tb.innerHTML = '<tr><td colspan="6">Chargement des utilisateurs…</td></tr>';
-  const { data: profs, error } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
-  if (error) { tb.innerHTML = `<tr><td colspan="6" class="msg err">${esc(error.message)}</td></tr>`; return; }
-  if (!profs?.length) { tb.innerHTML = '<tr><td colspan="6" class="muted">Aucun utilisateur enregistré.</td></tr>'; return; }
-  adminUsersList = profs;
-  drawAdminUsers();
+  await renderAdmin();
 }
 
 function drawAdminUsers() {
   const q = ($('#adminUsersSearch')?.value || '').trim().toLowerCase();
-  const rows = adminUsersList.filter(u => !q || [u.nom_complet, u.email, u.telephone].join(' ').toLowerCase().includes(q));
+  const now = Date.now();
+
+  // Mise à jour des compteurs sur les filtres
+  const countAll = adminUsersList.length;
+  const countClients = adminUsersList.filter(u => !u.is_admin).length;
+  const countAdmins = adminUsersList.filter(u => !!u.is_admin).length;
+  const countCredits = adminUsersList.filter(u => (u.credits_balance || 0) > 0).length;
+  const countRecent = adminUsersList.filter(u => u.created_at && (now - new Date(u.created_at).getTime()) < 7 * 86400 * 1000).length;
+  const countActive = adminUsersList.filter(u => u.nbExercises > 0).length;
+
+  const setCnt = (id, n) => { const el = $(id); if (el) el.textContent = n; };
+  setCnt('#countFilterAll', countAll);
+  setCnt('#countFilterClients', countClients);
+  setCnt('#countFilterAdmins', countAdmins);
+  setCnt('#countFilterCredits', countCredits);
+  setCnt('#countFilterRecent', countRecent);
+  setCnt('#countFilterActive', countActive);
+
+  // Filtrage des lignes
+  const rows = adminUsersList.filter(u => {
+    if (adminUsersFilter === 'clients' && u.is_admin) return false;
+    if (adminUsersFilter === 'admins' && !u.is_admin) return false;
+    if (adminUsersFilter === 'credits' && !(u.credits_balance > 0)) return false;
+    if (adminUsersFilter === 'recent' && (!u.created_at || (now - new Date(u.created_at).getTime()) >= 7 * 86400 * 1000)) return false;
+    if (adminUsersFilter === 'active' && !u.nbExercises) return false;
+    if (q) {
+      const haystack = [u.nom_complet, u.email, u.telephone].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
+    return true;
+  });
+
   const tb = $('#adminUsersTable tbody');
+  if (!tb) return;
+
   if (!rows.length) {
-    tb.innerHTML = '<tr><td colspan="6" class="muted">Aucun utilisateur correspondant.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center; padding:32px;">Aucun utilisateur ne correspond à ce filtre ou recherche.</td></tr>';
     return;
   }
+
   tb.innerHTML = rows.map(u => {
     const isMe = (u.id === state.user?.id);
     const isAdmin = !!u.is_admin;
     const roleBadge = isAdmin
-      ? '<span class="badge ok" style="background:#065f46; color:#fff; font-weight:700;">👑 Administrateur</span>'
-      : '<span class="badge neutral">Client</span>';
-    const actionBtn = isMe
-      ? '<span class="muted small" title="Votre compte actif">(Votre compte)</span>'
+      ? '<span class="badge ok" style="background:#065f46; color:#fff; font-weight:700;">👑 Super-Admin</span>'
+      : '<span class="badge neutral">👤 Client</span>';
+
+    const initials = getInitials(u.nom_complet, u.email);
+    const timeAgo = timeAgoFr(u.created_at);
+    const dateFormatted = u.created_at ? dateTimeFr(u.created_at) : '—';
+
+    const promoteDemoteBtn = isMe
+      ? ''
       : (isAdmin
-          ? `<button class="btn bad sm" data-demote-user="${u.id}" data-email="${esc(u.email)}">Rétrograder en Client</button>`
-          : `<button class="btn ok sm" data-promote-user="${u.id}" data-email="${esc(u.email)}">👑 Nommer Administrateur</button>`);
+          ? `<button type="button" class="btn danger sm" data-demote-user="${u.id}" data-email="${esc(u.email)}" title="Rétrograder en simple client">Rétrograder</button>`
+          : `<button type="button" class="btn ok sm" data-promote-user="${u.id}" data-email="${esc(u.email)}" title="Accorder les privilèges administrateur">👑 Promouvoir</button>`);
 
     return `<tr>
-      <td><b>${esc(u.nom_complet || 'Sans nom')}</b></td>
-      <td>${esc(u.email || '—')}</td>
-      <td>${esc(u.telephone || '—')}</td>
-      <td><b>${u.credits_balance || 0}</b> crédit(s)</td>
-      <td>${roleBadge}</td>
-      <td>${actionBtn}</td>
+      <td>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="admin-badge-avatar">${esc(initials)}</span>
+          <div>
+            <div style="font-weight:700; color:#0f172a; display:flex; align-items:center; gap:6px;">
+              <span>${esc(u.nom_complet || 'Utilisateur sans nom')}</span>
+              ${isMe ? '<span class="badge gold" style="font-size:10px; padding:1px 5px;">VOUS</span>' : ''}
+            </div>
+            <div class="small muted" style="font-size:11px;">ID : ${esc(u.id ? u.id.slice(0, 8) + '…' : '—')}</div>
+          </div>
+        </div>
+      </td>
+      <td>
+        <div><a href="mailto:${esc(u.email)}" style="font-weight:600; color:var(--brand-2); text-decoration:none;">${esc(u.email || '—')}</a></div>
+        <div class="small muted"><a href="tel:${esc(u.telephone || '')}" style="color:#64748b; text-decoration:none;">${esc(u.telephone || 'Non renseigné')}</a></div>
+      </td>
+      <td>
+        <div style="font-weight:600; font-size:13px;">${esc(dateFormatted)}</div>
+        <div class="small" style="color:#0f766e; font-weight:700; font-size:11.5px;">${esc(timeAgo)}</div>
+      </td>
+      <td>
+        <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:2px;">
+          <span class="badge neutral" style="font-size:11px; padding:1px 6px;">${u.nbExercises || 0} dossier(s)</span>
+          ${u.nbGenerated ? `<span class="badge ok" style="font-size:11px; padding:1px 6px;">${u.nbGenerated} liasse(s)</span>` : ''}
+        </div>
+        <div class="small muted" style="font-size:11.5px;">${u.nbCompanies || 0} entreprise(s)</div>
+      </td>
+      <td style="text-align:center;">
+        <span class="badge gold" style="font-size:12.5px; font-weight:800; padding:3px 9px;">
+          ${u.credits_balance || 0} crédit(s)
+        </span>
+      </td>
+      <td style="text-align:center;">
+        ${roleBadge}
+      </td>
+      <td style="text-align:right; white-space:nowrap;">
+        <div style="display:inline-flex; gap:6px; align-items:center;">
+          <button type="button" class="btn sm ghost btn-admin-user-credit" data-user-id="${u.id}" data-user-name="${esc(u.nom_complet || u.email)}" title="Attribuer des crédits à ce client">⚡ Crédits</button>
+          <button type="button" class="btn sm ghost btn-admin-user-dossiers" data-user-email="${esc(u.email)}" title="Voir les dossiers de ce client">📁 Dossiers</button>
+          ${promoteDemoteBtn}
+        </div>
+      </td>
     </tr>`;
   }).join('');
 
+  // Clic sur bouton crédits
+  tb.querySelectorAll('.btn-admin-user-credit').forEach(b => b.addEventListener('click', () => {
+    switchAdminTab('credits');
+    const sel = $('#adminCreditUser');
+    if (sel) {
+      sel.value = b.dataset.userId;
+      $('#adminCreditDelta')?.focus();
+      toast(`Compte "${b.dataset.userName}" sélectionné.`);
+    }
+  }));
+
+  // Clic sur bouton dossiers
+  tb.querySelectorAll('.btn-admin-user-dossiers').forEach(b => b.addEventListener('click', () => {
+    switchAdminTab('dossiers');
+    const searchInp = $('#adminSearch');
+    if (searchInp) {
+      searchInp.value = b.dataset.userEmail;
+      drawAdmin();
+      toast(`Dossiers filtrés pour ${b.dataset.userEmail}.`);
+    }
+  }));
+
+  // Promotion administrateur
   tb.querySelectorAll('[data-promote-user]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.promoteUser;
     const email = b.dataset.email;
@@ -3401,14 +3632,15 @@ function drawAdminUsers() {
     if (err) {
       toast('Erreur promotion : ' + err.message, true);
       b.disabled = false;
-      b.textContent = '👑 Nommer Administrateur';
+      b.textContent = '👑 Promouvoir';
     } else {
       try { await sb.from('app_admins').upsert({ email }); } catch (_) {}
       toast(`👑 ${email} a été promu Administrateur !`);
-      renderAdminUsers();
+      await renderAdmin();
     }
   }));
 
+  // Rétrogradation client
   tb.querySelectorAll('[data-demote-user]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.demoteUser;
     const email = b.dataset.email;
@@ -3419,15 +3651,25 @@ function drawAdminUsers() {
     if (err) {
       toast('Erreur : ' + err.message, true);
       b.disabled = false;
-      b.textContent = 'Rétrograder en Client';
+      b.textContent = 'Rétrograder';
     } else {
       try { await sb.from('app_admins').delete().eq('email', email); } catch (_) {}
       toast(`Privilèges administrateur révoqués pour ${email}.`);
-      renderAdminUsers();
+      await renderAdmin();
     }
   }));
 }
+
+// Filtres et actions utilisateurs
 $('#adminUsersSearch')?.addEventListener('input', drawAdminUsers);
+$('#btnRefreshUsers')?.addEventListener('click', () => renderAdmin());
+$('#btnAdminExportAllUsers')?.addEventListener('click', exportUsersList);
+
+$$('[data-user-filter]').forEach(btn => btn.addEventListener('click', () => {
+  $$('[data-user-filter]').forEach(b => b.classList.toggle('active', b === btn));
+  adminUsersFilter = btn.dataset.userFilter;
+  drawAdminUsers();
+}));
 
 // ------------------------------------------------------------------ démarrage
 $('#footContact').textContent = `${BRAND.contact} · ${BRAND.tel}`;

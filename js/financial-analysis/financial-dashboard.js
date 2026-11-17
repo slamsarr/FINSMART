@@ -9,6 +9,8 @@ import { extractFinancialSnapshot } from './financial-extractor.js';
 import { computeFinancialMetrics } from './financial-metrics.js';
 import { runFinancialControls } from './financial-controls.js';
 import { generateExpertNarrative, askFinancialAnalyst } from './financial-ai.js';
+import { runTaxAudit } from './financial-tax-audit.js';
+import { generateManagementReportData, buildManagementReportHtml, downloadManagementReportDoc } from './financial-management-report.js';
 
 const fmt = n => (typeof n === 'number' ? (Math.round(n) || 0).toLocaleString('fr-FR').replace(/ | /g, ' ') : String(n ?? ''));
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -29,8 +31,10 @@ export async function renderFinancialAnalysisDashboard(container, { values, wb, 
     const metricsResult = computeFinancialMetrics(snapshot);
     const controlsResult = runFinancialControls(snapshot, metricsResult);
     const narrativeResult = generateExpertNarrative(snapshot, metricsResult, controlsResult);
+    const taxAuditResult = runTaxAudit(snapshot, metricsResult);
+    const managementReportData = generateManagementReportData(snapshot, metricsResult, controlsResult);
 
-    currentAnalysisData = { snapshot, metricsResult, controlsResult, narrativeResult, exercise, company };
+    currentAnalysisData = { snapshot, metricsResult, controlsResult, narrativeResult, taxAuditResult, managementReportData, exercise, company };
 
     // Sauvegarde en arrière-plan dans Supabase si connecté
     if (sb && exercise?.id && company?.id) {
@@ -63,7 +67,7 @@ export async function renderFinancialAnalysisDashboard(container, { values, wb, 
 }
 
 function renderFullDashboardUI(container, data) {
-  const { snapshot, metricsResult, controlsResult, narrativeResult } = data;
+  const { snapshot, metricsResult, controlsResult, narrativeResult, taxAuditResult, managementReportData } = data;
   const score = controlsResult.healthScore;
   const { metricsMap } = metricsResult;
 
@@ -96,6 +100,9 @@ function renderFullDashboardUI(container, data) {
         </div>
 
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button type="button" class="btn sm" id="btnDownloadReportDoc" style="background:#0f766e; border-color:#0f766e; color:#fff; font-weight:700;" title="Télécharger le Rapport de Gestion & Résolutions d'AGO au format Word (.doc)">
+            📄 Rapport AGO (.doc)
+          </button>
           <button type="button" class="btn gold sm" id="btnPrintAnalysisReport">
             🖨️ Imprimer le Rapport A4
           </button>
@@ -142,6 +149,8 @@ function renderFullDashboardUI(container, data) {
       <button class="tab" data-tab="flux">🌊 Flux de Trésorerie (TFT)</button>
       <button class="tab" data-tab="cycle">🔄 Cycle d'exploitation</button>
       <button class="tab" data-tab="risques">⚠️ Diagnostic & Risques</button>
+      <button class="tab" data-tab="fiscalite">⚖️ Audit Fiscal DGID</button>
+      <button class="tab" data-tab="rapport-gestion">📜 Rapport de Gestion & AGO</button>
       <button class="tab" data-tab="scenarios">🔮 Scénarios N+1</button>
       <button class="tab" data-tab="assistant">🤖 FINSMART Analyste IA</button>
     </div>
@@ -403,7 +412,104 @@ function renderFullDashboardUI(container, data) {
         </div>
       </div>
 
-      <!-- 9. SIMULATIONS & SCÉNARIOS N+1 -->
+      <!-- 9. AUDIT FISCAL DGID & RISQUES DE REDRESSEMENT (CGI SÉNÉGAL) -->
+      <div class="analysis-tab-pane" id="pane-fiscalite" hidden>
+        <div class="card" style="margin-bottom:20px; background:#fff; border-left:4px solid #b45309;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
+            <div>
+              <div style="display:inline-flex; align-items:center; gap:6px; background:#fef3c7; color:#92400e; font-size:11.5px; font-weight:800; padding:2px 8px; border-radius:4px; text-transform:uppercase; margin-bottom:6px;">
+                CGI SÉNÉGAL (LOI N° 2012-31 MODIFIÉE)
+              </div>
+              <h2 style="margin:0 0 4px 0; color:#123a32;">Pré-Audit Fiscal & Détection des Risques de Redressement DGID</h2>
+              <p class="muted small" style="margin:0;">
+                Analyse automatisée des points critiques d'audit fiscal avant le télé-dépôt officiel sur <strong>Sen-etafi</strong>.
+              </p>
+            </div>
+            
+            <div style="display:flex; align-items:center; gap:14px; background:#f9fafb; padding:10px 16px; border-radius:8px; border:1px solid #e5e7eb;">
+              <div style="font-size:24px; font-weight:800; color:${taxAuditResult.stats.scoreFiscal >= 75 ? '#166534' : '#b45309'};">
+                ${taxAuditResult.stats.scoreFiscal}<small style="font-size:12px;">/100</small>
+              </div>
+              <div>
+                <div style="font-size:12px; font-weight:700; color:#1f2937;">Indice de Sécurité Fiscale</div>
+                <div style="font-size:11px; color:#4b5563;">${esc(taxAuditResult.stats.statutGlobal)}</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:12px; margin-top:16px; flex-wrap:wrap;">
+            <span class="badge ok" style="font-weight:700;">✅ ${taxAuditResult.stats.nbConformes} contrôles conformes</span>
+            <span class="badge warn" style="font-weight:700;">⚠️ ${taxAuditResult.stats.nbVigilance} points de vigilance</span>
+            ${taxAuditResult.stats.nbRisqueEleve > 0 ? `<span class="badge bad" style="font-weight:700;">⛔ ${taxAuditResult.stats.nbRisqueEleve} risque(s) élevé(s) de redressement</span>` : ''}
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          ${taxAuditResult.audits.map(a => `
+            <div class="card" style="padding:16px 20px; border-left:4px solid ${a.severite === 'risque_eleve' ? '#ef4444' : (a.severite === 'vigilance' ? '#f59e0b' : '#10b981')};">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+                <div>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="badge ${a.severite === 'risque_eleve' ? 'bad' : (a.severite === 'vigilance' ? 'warn' : 'ok')}" style="font-weight:700; font-size:11px;">
+                      ${a.severite === 'risque_eleve' ? '⛔ Risque Élevé' : (a.severite === 'vigilance' ? '⚠️ Vigilance Fiscale' : '✅ Conforme')}
+                    </span>
+                    <strong style="font-size:15px; color:#111827;">${esc(a.titre)}</strong>
+                  </div>
+                  <div style="font-size:12px; color:#1e40af; font-weight:600; margin-top:3px;">
+                    📜 Référence légale : ${esc(a.articleCGI)}
+                  </div>
+                </div>
+                <span class="badge neutral" style="font-family:var(--mono); font-size:11px;">${esc(a.code)}</span>
+              </div>
+
+              <div style="margin-top:10px; font-size:13px; line-height:1.5; color:#374151;">
+                <p style="margin:0 0 6px 0;"><strong>Constat financier :</strong> ${esc(a.constat)}</p>
+                <div style="background:#f9fafb; padding:8px 12px; border-radius:6px; margin:6px 0; border:1px solid #f3f4f6;">
+                  <strong style="color:#4b5563; font-size:12px;">Règle légale CGI :</strong> ${esc(a.regleLegale)}
+                </div>
+                ${a.severite !== 'ok' ? `
+                  <div style="background:#fef2f2; color:#991b1b; padding:8px 12px; border-radius:6px; margin:6px 0; font-size:12.5px;">
+                    <strong>Risque de redressement :</strong> ${esc(a.risqueEstime)}
+                  </div>
+                ` : ''}
+                <div style="background:#f0fdf4; color:#166534; padding:8px 12px; border-radius:6px; margin-top:6px; font-size:12.5px;">
+                  <strong>💡 Recommandation fiscale FINSMART :</strong> ${esc(a.recommandation)}
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- 10. RAPPORT DE GESTION & RÉSOLUTIONS AGO (AUDSCGIE OHADA) -->
+      <div class="analysis-tab-pane" id="pane-rapport-gestion" hidden>
+        <div class="card" style="margin-bottom:20px; background:#fff;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+            <div>
+              <div style="display:inline-flex; align-items:center; gap:6px; background:#ecfdf5; color:#065f46; font-size:11.5px; font-weight:800; padding:2px 8px; border-radius:4px; text-transform:uppercase; margin-bottom:4px;">
+                DROIT DES SOCIÉTÉS OHADA
+              </div>
+              <h2 style="margin:0; color:#123a32;">Rapport de Gestion & Résolutions de l'AGO</h2>
+              <p class="muted small" style="margin:0;">Document juridique officiel conforme aux articles 138 à 144 et 346 de l'AUDSCGIE.</p>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+              <button type="button" class="btn primary sm" id="btnDownloadReportDocPane" style="font-weight:700;">
+                📄 Télécharger le Rapport (.doc / Word)
+              </button>
+              <button type="button" class="btn ghost sm" onclick="window.print()">
+                🖨️ Imprimer la liasse juridique
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- AFFICHAGE DIRECT DU DOCUMENT PRÉ-REMPLI -->
+        <div style="border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#e5e7eb; padding:20px 10px;">
+          ${buildManagementReportHtml(managementReportData)}
+        </div>
+      </div>
+
+      <!-- 11. SIMULATIONS & SCÉNARIOS N+1 -->
       <div class="analysis-tab-pane" id="pane-scenarios" hidden>
         <div class="card">
           <h2>Simulateur Financier & Projections N+1</h2>
@@ -606,6 +712,14 @@ function setupExportButtons(data) {
 
   document.getElementById('btnExportAnalysisXlsx')?.addEventListener('click', () => {
     exportAnalysisToCsvOrExcel(data);
+  });
+
+  document.getElementById('btnDownloadReportDoc')?.addEventListener('click', () => {
+    downloadManagementReportDoc(data.managementReportData);
+  });
+
+  document.getElementById('btnDownloadReportDocPane')?.addEventListener('click', () => {
+    downloadManagementReportDoc(data.managementReportData);
   });
 }
 

@@ -5,7 +5,7 @@
  * Performance : 0 dépendance externe lourde, graphiques vectoriels SVG ultra-fluides.
  */
 
-import { extractFinancialSnapshot } from './financial-extractor.js';
+import { extractFinancialSnapshot, determineEconomicProfile } from './financial-extractor.js';
 import { computeFinancialMetrics } from './financial-metrics.js';
 import { runFinancialControls } from './financial-controls.js';
 import { generateExpertNarrative, askFinancialAnalyst } from './financial-ai.js';
@@ -28,13 +28,14 @@ export async function renderFinancialAnalysisDashboard(container, { values, wb, 
   try {
     // 1. Extraction et calculs déterministes
     const snapshot = extractFinancialSnapshot({ values, wb, infos, exercise, company });
+    const ecoProfile = determineEconomicProfile(snapshot);
     const metricsResult = computeFinancialMetrics(snapshot);
     const controlsResult = runFinancialControls(snapshot, metricsResult);
     const narrativeResult = generateExpertNarrative(snapshot, metricsResult, controlsResult);
     const taxAuditResult = runTaxAudit(snapshot, metricsResult);
     const managementReportData = generateManagementReportData(snapshot, metricsResult, controlsResult);
 
-    currentAnalysisData = { snapshot, metricsResult, controlsResult, narrativeResult, taxAuditResult, managementReportData, exercise, company };
+    currentAnalysisData = { snapshot, ecoProfile, metricsResult, controlsResult, narrativeResult, taxAuditResult, managementReportData, exercise, company };
 
     // Sauvegarde en arrière-plan dans Supabase si connecté
     if (sb && exercise?.id && company?.id) {
@@ -67,7 +68,7 @@ export async function renderFinancialAnalysisDashboard(container, { values, wb, 
 }
 
 function renderFullDashboardUI(container, data) {
-  const { snapshot, metricsResult, controlsResult, narrativeResult, taxAuditResult, managementReportData } = data;
+  const { snapshot, ecoProfile, metricsResult, controlsResult, narrativeResult, taxAuditResult, managementReportData } = data;
   const score = controlsResult.healthScore;
   const { metricsMap } = metricsResult;
 
@@ -160,6 +161,58 @@ function renderFullDashboardUI(container, data) {
 
       <!-- 1. VUE D'ENSEMBLE -->
       <div class="analysis-tab-pane" id="pane-vue-ensemble">
+        <!-- ENCART PROFIL ÉCONOMIQUE & MODÈLE OPÉRATIONNEL DÉTECTÉ -->
+        <div class="card" style="margin-bottom:20px; background:#fff; border-left:4px solid var(--brand); padding:18px 22px; box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+            <div>
+              <div style="display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#166534; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px; text-transform:uppercase; margin-bottom:6px;">
+                <span>🏛️</span> PROFIL ÉCONOMIQUE & MODÈLE OPÉRATIONNEL ANALYSÉ
+              </div>
+              <h3 style="margin:0; font-size:17px; color:#123a32;">
+                ${esc(ecoProfile.typologie)}
+                <span class="badge neutral" style="font-size:11.5px; font-weight:700; margin-left:8px; vertical-align:middle; background:#e0f2fe; color:#0369a1;">
+                  ${esc(ecoProfile.badgeModel)}
+                </span>
+              </h3>
+            </div>
+            
+            <div style="text-align:right;">
+              <span class="small muted">Activité déclarée (Liasse DGID) :</span>
+              <div style="font-size:13px; font-weight:700; color:#374151;">${esc(ecoProfile.activiteDeclaree)}</div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-top:16px; padding-top:14px; border-top:1px solid #f3f4f6;">
+            <div>
+              <div style="font-size:11.5px; font-weight:700; color:#6b7280; text-transform:uppercase;">Structure des Revenus</div>
+              <p style="margin:4px 0 0 0; font-size:13px; color:#1f2937; line-height:1.45;">
+                ${esc(ecoProfile.typeDesc)}
+              </p>
+              <div style="display:flex; gap:8px; margin-top:6px; font-size:11px; color:#6b7280;">
+                <span>Marchandises : <strong>${ecoProfile.repartitionCA.pctTA}%</strong></span> ·
+                <span>Produits finis : <strong>${ecoProfile.repartitionCA.pctTB}%</strong></span> ·
+                <span>Services : <strong>${ecoProfile.repartitionCA.pctTC}%</strong></span>
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size:11.5px; font-weight:700; color:#6b7280; text-transform:uppercase;">Intensité Capitalistique</div>
+              <p style="margin:4px 0 0 0; font-size:13px; color:#1f2937; line-height:1.45;">
+                <strong>${esc(ecoProfile.intensiteCapital)}</strong><br>
+                ${esc(ecoProfile.intensiteDesc)}
+              </p>
+            </div>
+
+            <div>
+              <div style="font-size:11.5px; font-weight:700; color:#6b7280; text-transform:uppercase;">Création de Valeur & Cohérence</div>
+              <p style="margin:4px 0 0 0; font-size:13px; color:#1f2937; line-height:1.45;">
+                <strong>${esc(ecoProfile.profilVA)}</strong><br>
+                <span style="font-size:12px; color:#047857;">${esc(ecoProfile.concordance)}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
         <!-- 8 CARTES KPI PRINCIPALES -->
         <div class="grid4" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:20px;">
           ${renderKpiCard('Chiffre d\'affaires', ca.valN, ca.valN1, croissCa.valN, '%', 'IND_01')}

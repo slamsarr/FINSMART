@@ -266,3 +266,100 @@ export function extractFinancialSnapshot({ values, wb, infos = {}, exercise = {}
     }
   };
 }
+
+/**
+ * Détermine le profil économique et le modèle opérationnel de l'entreprise
+ * à partir de l'empreinte financière du compte de résultat et du bilan SYSCOHADA.
+ * @param {object} snapshot 
+ * @returns {object}
+ */
+export function determineEconomicProfile(snapshot) {
+  const { cr = {}, bilan = {}, metadata = {} } = snapshot;
+  const ca = cr.chiffreAffaires?.n || 0;
+  const ta = cr.ventesMarchandises?.n || 0;
+  const tb = cr.ventesProduitsFabriques?.n || 0;
+  const tc = cr.travauxServicesVendus?.n || 0;
+  const immoNet = bilan.totalActifImmobiliseNet?.n || 0;
+  const totalActif = bilan.totalGeneralActif?.n || 0;
+  const va = cr.valeurAjoutee?.n || 0;
+
+  // Répartition du Chiffre d'Affaires
+  const pctTA = ca > 0 ? Math.round((ta / ca) * 100) : 0;
+  const pctTB = ca > 0 ? Math.round((tb / ca) * 100) : 0;
+  const pctTC = ca > 0 ? Math.round((tc / ca) * 100) : 0;
+
+  // Intensité capitalistique (Actif immobilisé / Total actif)
+  const ratioImmoActif = totalActif > 0 ? Math.round((immoNet / totalActif) * 100) : 0;
+  let intensiteCapital = 'Légère en capital (Asset-Light)';
+  let intensiteDesc = `Immobilisations nettes représentant ${ratioImmoActif}% du total bilan. Faible besoin d'équipements lourds.`;
+  if (ratioImmoActif > 45) {
+    intensiteCapital = 'Forte intensité capitalistique (Asset-Heavy)';
+    intensiteDesc = `Immobilisations nettes représentant ${ratioImmoActif}% du total bilan. Structure exigeant des investissements corporels lourds.`;
+  } else if (ratioImmoActif >= 20) {
+    intensiteCapital = 'Intensité capitalistique modérée';
+    intensiteDesc = `Immobilisations nettes représentant ${ratioImmoActif}% du total bilan. Équilibre emplois stables et circulants.`;
+  }
+
+  // Typologie économique dominante
+  let typologie = 'Activité Diversifiée / Mixte';
+  let badgeModel = 'Mixte';
+  let typeDesc = '';
+
+  if (pctTA >= 65) {
+    typologie = 'Négoce, Distribution & Vente de Marchandises';
+    badgeModel = 'Commerce / Négoce';
+    typeDesc = `${pctTA}% du chiffre d'affaires provient de ventes de marchandises en l'état (marge sur achats de revente).`;
+  } else if (pctTB >= 50) {
+    typologie = 'Production Manufacturière & Transformation Industrielle';
+    badgeModel = 'Industrie / Production';
+    typeDesc = `${pctTB}% du CA généré par des produits fabriqués ou transformés en interne.`;
+  } else if (pctTC >= 60) {
+    typologie = 'Prestations de Services & Ingénierie';
+    badgeModel = 'Services & Travaux';
+    typeDesc = `${pctTC}% du CA provient de travaux, études et prestations de services (forte composante humaine et immatérielle).`;
+  } else if (pctTA >= 30 && pctTC >= 30) {
+    typologie = 'Modèle Hybride : Vente d\'Équipements & Prestations associées';
+    badgeModel = 'Commerce + Services';
+    typeDesc = `Équilibre entre ventes d'équipements (${pctTA}%) et prestations/installations (${pctTC}%).`;
+  } else if (pctTB >= 25 && pctTA >= 25) {
+    typologie = 'Modèle Mixte : Production & Distribution commerciale';
+    badgeModel = 'Industrie + Négoce';
+    typeDesc = `Double flux de fabrication interne (${pctTB}%) et de négoce complémentaire (${pctTA}%).`;
+  } else {
+    typeDesc = `Répartition multi-activités : Marchandises ${pctTA}%, Produits finis ${pctTB}%, Services ${pctTC}%.`;
+  }
+
+  // Profil de Valeur Ajoutée
+  const tauxVA = ca > 0 ? Math.round((va / ca) * 100) : 0;
+  let profilVA = 'Marge sur volume';
+  if (tauxVA >= 50) {
+    profilVA = `Forte création de valeur interne (${tauxVA}% du CA)`;
+  } else if (tauxVA >= 25) {
+    profilVA = `Création de valeur intermédiaire (${tauxVA}% du CA)`;
+  } else {
+    profilVA = `Modèle d'intermédiation à forte rotation (${tauxVA}% de VA sur CA)`;
+  }
+
+  // Cohérence avec l'activité déclarée
+  const activiteDeclaree = metadata.secteur || 'Non renseignée';
+  let concordance = 'Concordance naturelle avec la structure financière constatée.';
+  if (pctTA > 60 && /service|conseil|informatique|etude/i.test(activiteDeclaree)) {
+    concordance = 'Remarque : Activité déclarée comme service alors que les comptes enregistrent une prépondérance de vente de marchandises.';
+  } else if (pctTC > 60 && /commerce|négoce|import|vente/i.test(activiteDeclaree)) {
+    concordance = 'Remarque : Activité déclarée comme négoce alors que les revenus sont comptabilisés en prestations de services.';
+  }
+
+  return {
+    typologie,
+    badgeModel,
+    typeDesc,
+    repartitionCA: { pctTA, pctTB, pctTC },
+    intensiteCapital,
+    intensiteDesc,
+    ratioImmoActif,
+    tauxVA,
+    profilVA,
+    activiteDeclaree,
+    concordance
+  };
+}

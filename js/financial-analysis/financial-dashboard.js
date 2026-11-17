@@ -11,6 +11,7 @@ import { runFinancialControls } from './financial-controls.js';
 import { generateExpertNarrative, askFinancialAnalyst } from './financial-ai.js';
 import { runTaxAudit } from './financial-tax-audit.js';
 import { generateManagementReportData, buildManagementReportHtml, downloadManagementReportDoc } from './financial-management-report.js';
+import { ICONS } from './financial-icons.js';
 
 const fmt = n => (typeof n === 'number' ? (Math.round(n) || 0).toLocaleString('fr-FR').replace(/ | /g, ' ') : String(n ?? ''));
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -88,72 +89,72 @@ function renderFullDashboardUI(container, data) {
 
   container.innerHTML = `
     <!-- EN-TÊTE DU TABLEAU DE BORD D'ANALYSE -->
-    <div class="analysis-header card" style="margin-bottom:20px; background:linear-gradient(135deg, #123a32 0%, #0d2822 100%); color:#fff; border:none; box-shadow:0 6px 20px rgba(18,58,50,0.18);">
+    <div class="analysis-header card" style="margin-bottom:20px;">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
         <div>
           <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(233,185,73,0.18); border:1px solid #e9b949; color:#e9b949; font-size:11px; font-weight:800; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">
-            <span>★</span> FINSMART ANALYSE FINANCIÈRE PREMIUM V1.0
+            ${ICONS.badgeStar} <span>FINSMART ANALYSE FINANCIÈRE PREMIUM V1.0</span>
           </div>
-          <h1 style="color:#ffffff; font-size:24px; margin:0 0 4px 0;">${esc(snapshot.metadata.denomination)}</h1>
+          <h1 style="color:#ffffff; font-size:24px; margin:0 0 4px 0; letter-spacing:-0.02em;">${esc(snapshot.metadata.denomination)}</h1>
           <div style="font-size:13px; opacity:0.85;">
             Exercice clos le ${esc(snapshot.metadata.anneeN)} · Modèle officiel DGID Sénégal (SYSCOHADA Révisé) · NINEA : ${esc(snapshot.metadata.ninea || 'Non renseigné')}
           </div>
         </div>
 
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-          <button type="button" class="btn sm" id="btnDownloadReportDoc" style="background:#0f766e; border-color:#0f766e; color:#fff; font-weight:700;" title="Télécharger le Rapport de Gestion & Résolutions d'AGO au format Word (.doc)">
-            📄 Rapport AGO (.doc)
+          <button type="button" class="btn sm" id="btnDownloadReportDoc" style="background:#0f766e; border:1px solid #14b8a6; color:#fff; font-weight:700; display:inline-flex; align-items:center; gap:6px;" title="Télécharger le Rapport de Gestion & Résolutions d'AGO au format Word (.doc)">
+            ${ICONS.word} <span>Rapport AGO (.doc)</span>
           </button>
-          <button type="button" class="btn gold sm" id="btnPrintAnalysisReport">
-            🖨️ Imprimer le Rapport A4
+          <button type="button" class="btn gold sm" id="btnPrintAnalysisReport" style="display:inline-flex; align-items:center; gap:6px;">
+            ${ICONS.printer} <span>Imprimer Rapport A4</span>
           </button>
-          <button type="button" class="btn ghost sm" id="btnExportAnalysisXlsx" style="color:#fff; border-color:rgba(255,255,255,0.3);">
-            📊 Exporter Excel (.xlsx)
+          <button type="button" class="btn ghost sm" id="btnExportAnalysisXlsx" style="color:#fff; border-color:rgba(255,255,255,0.3); display:inline-flex; align-items:center; gap:6px;">
+            ${ICONS.excel} <span>Exporter (.csv)</span>
           </button>
-          <button type="button" class="btn ghost sm" data-go="dashboard" style="color:#fff; border-color:rgba(255,255,255,0.3);">
-            ← Retour aux dossiers
+          <button type="button" class="btn ghost sm" data-go="dashboard" style="color:#fff; border-color:rgba(255,255,255,0.3); display:inline-flex; align-items:center; gap:6px;">
+            ${ICONS.back} <span>Dossiers</span>
           </button>
         </div>
       </div>
 
       <!-- BANDEAU SCORE DE SANTÉ FINANCIÈRE -->
-      <div class="analysis-score-banner" style="margin-top:20px; padding-top:18px; border-top:1px solid rgba(255,255,255,0.12); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
+      <div class="analysis-score-banner" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
         <div style="display:flex; align-items:center; gap:16px;">
-          <div style="width:72px; height:72px; border-radius:50%; background:${score.total >= 65 ? '#10b981' : (score.total >= 50 ? '#f59e0b' : '#ef4444')}; color:#fff; display:grid; place-items:center; font-size:24px; font-weight:800; box-shadow:0 4px 12px rgba(0,0,0,0.25);">
-            ${score.total}<small style="font-size:12px; font-weight:600;">/100</small>
+          <div style="width:72px; height:72px; border-radius:50%; background:${score.total >= 65 ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : (score.total >= 50 ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)')}; color:#fff; display:grid; place-items:center; font-size:24px; font-weight:800; box-shadow:0 6px 16px rgba(0,0,0,0.3); border:2px solid rgba(233,185,73,0.35);">
+            ${score.total}<small style="font-size:11px; font-weight:600; opacity:0.85;">/100</small>
           </div>
           <div>
             <div style="font-size:16px; font-weight:700; color:#fff;">Score de Santé Financière Globale</div>
-            <div style="font-size:13px; color:#e9b949; font-weight:600;">${esc(score.mention)}</div>
+            <div style="font-size:13px; color:#e9b949; font-weight:700; letter-spacing:0.02em;">${esc(score.mention)}</div>
             <div style="font-size:12px; opacity:0.8; margin-top:2px;">100 indicateurs analysés · 20 contrôles de cohérence vérifiés</div>
           </div>
         </div>
 
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           ${Object.entries(score.piliers).map(([k, p]) => `
-            <div style="background:rgba(255,255,255,0.08); padding:6px 12px; border-radius:8px; font-size:12px; text-align:center;">
-              <div style="opacity:0.75; font-size:11px;">${esc(p.label.split('&')[0])}</div>
-              <div style="font-weight:700; font-size:13px; color:#fff;">${p.score} / ${p.max}</div>
+            <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); padding:6px 12px; border-radius:8px; font-size:12px; text-align:center; min-width:85px;">
+              <div style="opacity:0.75; font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em;">${esc(p.label.split('&')[0])}</div>
+              <div style="font-weight:700; font-size:13px; color:#fff; margin-top:2px;">${p.score} <span style="font-size:10.5px; opacity:0.6;">/ ${p.max}</span></div>
             </div>
           `).join('')}
         </div>
       </div>
     </div>
 
-    <!-- ONGLETS DE NAVIGATION DU MODULE D'ANALYSE -->
-    <div class="tabs" style="margin-bottom:20px; border-bottom:2px solid var(--line);" id="analysisTabsNav">
-      <button class="tab active" data-tab="vue-ensemble">📌 Vue d'ensemble</button>
-      <button class="tab" data-tab="sig">📈 Soldes & Marges (SIG)</button>
-      <button class="tab" data-tab="structure">🏛️ Structure & Bilan</button>
-      <button class="tab" data-tab="equilibre">⚖️ Équilibre & BFR</button>
-      <button class="tab" data-tab="rentabilite">💎 Rentabilité & DuPont</button>
-      <button class="tab" data-tab="flux">🌊 Flux de Trésorerie (TFT)</button>
-      <button class="tab" data-tab="cycle">🔄 Cycle d'exploitation</button>
-      <button class="tab" data-tab="risques">⚠️ Diagnostic & Risques</button>
-      <button class="tab" data-tab="fiscalite">⚖️ Audit Fiscal DGID</button>
-      <button class="tab" data-tab="rapport-gestion">📜 Rapport de Gestion & AGO</button>
-      <button class="tab" data-tab="scenarios">🔮 Scénarios N+1</button>
-      <button class="tab" data-tab="assistant">🤖 FINSMART Analyste IA</button>
+    <!-- ONGLETS DE NAVIGATION DU MODULE D'ANALYSE (FINTECH PILLS) -->
+    <div class="analysis-tabs-nav" id="analysisTabsNav">
+      <button class="analysis-tab-btn active" data-tab="vue-ensemble">${ICONS.overview} <span>Vue d'ensemble</span></button>
+      <button class="analysis-tab-btn" data-tab="sig">${ICONS.sig} <span>Soldes & Marges (SIG)</span></button>
+      <button class="analysis-tab-btn" data-tab="structure">${ICONS.structure} <span>Structure & Bilan</span></button>
+      <button class="analysis-tab-btn" data-tab="equilibre">${ICONS.equilibre} <span>Équilibre & BFR</span></button>
+      <button class="analysis-tab-btn" data-tab="rentabilite">${ICONS.rentabilite} <span>Rentabilité & DuPont</span></button>
+      <button class="analysis-tab-btn" data-tab="flux">${ICONS.flux} <span>Flux de Trésorerie (TFT)</span></button>
+      <button class="analysis-tab-btn" data-tab="cycle">${ICONS.cycle} <span>Cycle d'exploitation</span></button>
+      <button class="analysis-tab-btn" data-tab="risques">${ICONS.risques} <span>Diagnostic & Risques</span></button>
+      <button class="analysis-tab-btn" data-tab="fiscalite">${ICONS.fiscalite} <span>Audit Fiscal DGID</span></button>
+      <button class="analysis-tab-btn" data-tab="rapport-gestion">${ICONS.rapport} <span>Rapport de Gestion & AGO</span></button>
+      <button class="analysis-tab-btn" data-tab="scenarios">${ICONS.scenarios} <span>Scénarios N+1</span></button>
+      <button class="analysis-tab-btn" data-tab="assistant">${ICONS.assistant} <span>FINSMART Analyste IA</span></button>
     </div>
 
     <!-- ================= CONTENU DES ONGLETS ================= -->
@@ -166,7 +167,7 @@ function renderFullDashboardUI(container, data) {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
             <div>
               <div style="display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#166534; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px; text-transform:uppercase; margin-bottom:6px;">
-                <span>🏛️</span> PROFIL ÉCONOMIQUE & MODÈLE OPÉRATIONNEL ANALYSÉ
+                ${ICONS.structure} <span>PROFIL ÉCONOMIQUE & MODÈLE OPÉRATIONNEL ANALYSÉ</span>
               </div>
               <h3 style="margin:0; font-size:17px; color:#123a32;">
                 ${esc(ecoProfile.typologie)}
@@ -231,13 +232,13 @@ function renderFullDashboardUI(container, data) {
             <h2>Synthèse Exécutive de Direction</h2>
             <p style="font-size:14px; line-height:1.6; color:var(--ink);">${esc(narrativeResult.syntheseExecutive.constatGlobal)}</p>
             <div style="margin-top:14px;">
-              <div style="font-weight:700; font-size:13px; color:#166534; margin-bottom:6px;">✓ Principaux Points Forts :</div>
+              <div style="font-weight:700; font-size:13px; color:#166534; margin-bottom:6px; display:flex; align-items:center; gap:6px;">${ICONS.check} Principaux Points Forts :</div>
               <ul style="margin:0; padding-left:20px; font-size:13px; line-height:1.5; color:var(--ink-2);">
                 ${narrativeResult.syntheseExecutive.pointsForts.map(p => `<li>${esc(p)}</li>`).join('')}
               </ul>
             </div>
             <div style="margin-top:14px;">
-              <div style="font-weight:700; font-size:13px; color:#991b1b; margin-bottom:6px;">⚠ Points de Vigilance Majeurs :</div>
+              <div style="font-weight:700; font-size:13px; color:#991b1b; margin-bottom:6px; display:flex; align-items:center; gap:6px;">${ICONS.alertWarn} Points de Vigilance Majeurs :</div>
               <ul style="margin:0; padding-left:20px; font-size:13px; line-height:1.5; color:var(--ink-2);">
                 ${narrativeResult.syntheseExecutive.pointsVigilance.map(p => `<li>${esc(p)}</li>`).join('')}
               </ul>
@@ -254,7 +255,7 @@ function renderFullDashboardUI(container, data) {
                     <span class="badge ${r.priorite === 'Haute' ? 'bad' : 'warn'}">${esc(r.priorite)}</span>
                   </div>
                   <div style="font-size:12px; color:var(--ink-2); line-height:1.4;">${esc(r.justification)}</div>
-                  <div style="font-size:11px; color:var(--muted); margin-top:4px;">🎯 <i>${esc(r.indicateurSuivi)}</i></div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:4px; display:flex; align-items:center; gap:5px;">${ICONS.target} <i>${esc(r.indicateurSuivi)}</i></div>
                 </div>
               `).join('')}
             </div>
@@ -455,7 +456,7 @@ function renderFullDashboardUI(container, data) {
                     <td><code>${esc(c.code)}</code></td>
                     <td style="font-weight:600;">${esc(c.label)}</td>
                     <td><span class="badge ${c.type === 'bloquant' ? 'bad' : 'neutral'}">${esc(c.type)}</span></td>
-                    <td><span class="badge ${c.status === 'ok' ? 'ok' : 'bad'}">${c.status === 'ok' ? '✓ Conforme' : '⚠ Anomalie'}</span></td>
+                    <td><span class="badge ${c.status === 'ok' ? 'ok' : 'bad'}">${c.status === 'ok' ? `<span style="display:inline-flex; align-items:center; gap:4px;">${ICONS.check} Conforme</span>` : `<span style="display:inline-flex; align-items:center; gap:4px;">${ICONS.alertBlock} Anomalie</span>`}</span></td>
                     <td style="font-size:12.5px; color:var(--ink-2);">${esc(c.explication)}</td>
                   </tr>
                 `).join('')}
@@ -491,9 +492,9 @@ function renderFullDashboardUI(container, data) {
           </div>
 
           <div style="display:flex; gap:12px; margin-top:16px; flex-wrap:wrap;">
-            <span class="badge ok" style="font-weight:700;">✅ ${taxAuditResult.stats.nbConformes} contrôles conformes</span>
-            <span class="badge warn" style="font-weight:700;">⚠️ ${taxAuditResult.stats.nbVigilance} points de vigilance</span>
-            ${taxAuditResult.stats.nbRisqueEleve > 0 ? `<span class="badge bad" style="font-weight:700;">⛔ ${taxAuditResult.stats.nbRisqueEleve} risque(s) élevé(s) de redressement</span>` : ''}
+            <span class="badge ok" style="font-weight:700; display:inline-flex; align-items:center; gap:5px;">${ICONS.check} ${taxAuditResult.stats.nbConformes} contrôles conformes</span>
+            <span class="badge warn" style="font-weight:700; display:inline-flex; align-items:center; gap:5px;">${ICONS.alertWarn} ${taxAuditResult.stats.nbVigilance} points de vigilance</span>
+            ${taxAuditResult.stats.nbRisqueEleve > 0 ? `<span class="badge bad" style="font-weight:700; display:inline-flex; align-items:center; gap:5px;">${ICONS.alertBlock} ${taxAuditResult.stats.nbRisqueEleve} risque(s) élevé(s) de redressement</span>` : ''}
           </div>
         </div>
 
@@ -504,12 +505,12 @@ function renderFullDashboardUI(container, data) {
                 <div>
                   <div style="display:flex; align-items:center; gap:8px;">
                     <span class="badge ${a.severite === 'risque_eleve' ? 'bad' : (a.severite === 'vigilance' ? 'warn' : 'ok')}" style="font-weight:700; font-size:11px;">
-                      ${a.severite === 'risque_eleve' ? '⛔ Risque Élevé' : (a.severite === 'vigilance' ? '⚠️ Vigilance Fiscale' : '✅ Conforme')}
+                      ${a.severite === 'risque_eleve' ? `<span style="display:inline-flex; align-items:center; gap:4px;">${ICONS.alertBlock} Risque Élevé</span>` : (a.severite === 'vigilance' ? `<span style="display:inline-flex; align-items:center; gap:4px;">${ICONS.alertWarn} Vigilance Fiscale</span>` : `<span style="display:inline-flex; align-items:center; gap:4px;">${ICONS.check} Conforme</span>`)}
                     </span>
                     <strong style="font-size:15px; color:#111827;">${esc(a.titre)}</strong>
                   </div>
-                  <div style="font-size:12px; color:#1e40af; font-weight:600; margin-top:3px;">
-                    📜 Référence légale : ${esc(a.articleCGI)}
+                  <div style="font-size:12px; color:#1e40af; font-weight:600; margin-top:3px; display:inline-flex; align-items:center; gap:5px;">
+                    ${ICONS.book} Référence légale : ${esc(a.articleCGI)}
                   </div>
                 </div>
                 <span class="badge neutral" style="font-family:var(--mono); font-size:11px;">${esc(a.code)}</span>
@@ -526,7 +527,7 @@ function renderFullDashboardUI(container, data) {
                   </div>
                 ` : ''}
                 <div style="background:#f0fdf4; color:#166534; padding:8px 12px; border-radius:6px; margin-top:6px; font-size:12.5px;">
-                  <strong>💡 Recommandation fiscale FINSMART :</strong> ${esc(a.recommandation)}
+                  <strong style="display:inline-flex; align-items:center; gap:5px;">${ICONS.lightbulb} Recommandation fiscale FINSMART :</strong> ${esc(a.recommandation)}
                 </div>
               </div>
             </div>
@@ -546,11 +547,11 @@ function renderFullDashboardUI(container, data) {
               <p class="muted small" style="margin:0;">Document juridique officiel conforme aux articles 138 à 144 et 346 de l'AUDSCGIE.</p>
             </div>
             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-              <button type="button" class="btn primary sm" id="btnDownloadReportDocPane" style="font-weight:700;">
-                📄 Télécharger le Rapport (.doc / Word)
+              <button type="button" class="btn primary sm" id="btnDownloadReportDocPane" style="font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+                ${ICONS.word} <span>Télécharger le Rapport (.doc / Word)</span>
               </button>
-              <button type="button" class="btn ghost sm" onclick="window.print()">
-                🖨️ Imprimer la liasse juridique
+              <button type="button" class="btn ghost sm" onclick="window.print()" style="display:inline-flex; align-items:center; gap:6px;">
+                ${ICONS.printer} <span>Imprimer la liasse juridique</span>
               </button>
             </div>
           </div>
@@ -585,10 +586,10 @@ function renderFullDashboardUI(container, data) {
         </div>
       </div>
 
-      <!-- 10. FINSMART ANALYSTE IA (ASSISTANT CONVERSATIONNEL) -->
+      <!-- 12. FINSMART ANALYSTE IA (ASSISTANT CONVERSATIONNEL) -->
       <div class="analysis-tab-pane" id="pane-assistant" hidden>
         <div class="card" style="max-width:850px; margin:0 auto;">
-          <h2>🤖 FINSMART Analyste IA – Votre copilote financier</h2>
+          <h2 style="display:flex; align-items:center; gap:8px;">${ICONS.assistant} FINSMART Analyste IA – Votre copilote financier</h2>
           <p class="muted small">Interrogez l'intelligence artificielle sur les états financiers réels de ${esc(snapshot.metadata.denomination)}.</p>
 
           <div id="aiChatBox" style="height:320px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; padding:16px; background:#fbfcfb; display:flex; flex-direction:column; gap:12px; margin-bottom:14px;">
@@ -622,18 +623,24 @@ function renderFullDashboardUI(container, data) {
 
 function renderKpiCard(title, valN, valN1, varPct, unit, code) {
   const isPos = varPct !== null && varPct >= 0;
+  const hasVar = varPct !== null && varPct !== undefined;
   return `
-    <div class="card" style="padding:14px 16px; position:relative;">
+    <div class="analysis-kpi-tile">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase;">${esc(title)}</span>
-        <span style="font-size:10px; font-family:var(--mono); color:var(--muted);">${esc(code)}</span>
+        <span class="kpi-label">${esc(title)}</span>
+        <span class="kpi-badge-code">${esc(code)}</span>
       </div>
-      <div style="font-size:19px; font-weight:800; color:var(--ink); margin:6px 0 2px 0;">
-        ${fmt(valN)} <small style="font-size:11px; font-weight:600; color:var(--muted);">${esc(unit === 'FCFA' ? 'F' : (unit === '%' ? '%' : ''))}</small>
+      <div class="kpi-value">
+        ${fmt(valN)} <small style="font-size:12px; font-weight:600; color:#64748b;">${esc(unit === 'FCFA' ? 'F' : (unit === '%' ? '%' : ''))}</small>
       </div>
-      <div style="font-size:11.5px; display:flex; gap:6px; align-items:center;">
-        ${valN1 !== null && valN1 !== undefined ? `<span class="muted">N-1 : ${fmt(valN1)}</span>` : ''}
-        ${varPct !== null && varPct !== undefined ? `<span class="badge ${isPos ? 'ok' : 'bad'}" style="font-size:10.5px; padding:1px 6px;">${isPos ? '+' : ''}${varPct}%</span>` : ''}
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:11.5px;">
+        <span style="color:#64748b;">${valN1 !== null && valN1 !== undefined ? `N-1 : ${fmt(valN1)}` : 'Exercice N'}</span>
+        ${hasVar ? `
+          <span class="trend-pill ${isPos ? 'up' : 'down'}">
+            ${isPos ? ICONS.trendUp : ICONS.trendDown}
+            ${isPos ? '+' : ''}${varPct}%
+          </span>
+        ` : ''}
       </div>
     </div>
   `;
@@ -656,7 +663,7 @@ function renderSigRow(label, n, n1, isBold = false, isHighlight = false) {
 }
 
 function setupAnalysisTabs() {
-  const tabs = document.querySelectorAll('#analysisTabsNav .tab');
+  const tabs = document.querySelectorAll('#analysisTabsNav .analysis-tab-btn');
   tabs.forEach(t => t.addEventListener('click', () => {
     tabs.forEach(x => x.classList.toggle('active', x === t));
     const target = t.dataset.tab;

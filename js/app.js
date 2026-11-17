@@ -296,14 +296,79 @@ async function renderDashboard() {
         ${d.generated_at ? `<button class="btn ghost sm" onclick="location.hash='#/analysis/${d.id}'" title="Consulter l'analyse financière 100 indicateurs">📊 Analyse</button>` : ''}
         ${liasse ? `<button class="btn gold sm" data-dl="${esc(liasse.storage_path)}" data-name="${esc(liasse.nom_original)}">Télécharger la liasse</button>` : ''}
         <button class="btn ghost sm" onclick="location.hash='#/dossier/${d.id}'">${d.generated_at ? 'Ouvrir' : 'Continuer'}</button>
+        <button type="button" class="btn danger sm btn-delete-dossier" data-dossier-id="${d.id}" data-dossier-name="${esc(d.companies?.nom || 'Dossier')}" data-dossier-ex="${esc(dateFr(d.date_fin) || d.exercice)}" title="Supprimer définitivement ce dossier">🗑️ Supprimer</button>
       </div></article>`;
   }).join('');
   box.querySelectorAll('[data-dl]').forEach(b => b.addEventListener('click', () => downloadStored('etats', b.dataset.dl, b.dataset.name)));
+  box.querySelectorAll('.btn-delete-dossier').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    deleteDossier(b.dataset.dossierId, b.dataset.dossierName, b.dataset.dossierEx);
+  }));
 }
 async function downloadStored(bucket, path, name) {
   const { data, error } = await sb.storage.from(bucket).download(path);
   if (error) return toast('Téléchargement impossible : ' + error.message, true);
   downloadBlob(data, name || path.split('/').pop());
+}
+
+async function deleteDossier(id, nom = 'ce dossier', dateFin = '') {
+  if (!id) return;
+  const label = nom + (dateFin ? ` (clos le ${dateFr(dateFin) || dateFin})` : '');
+  const confirmed = confirm(`Êtes-vous sûr de vouloir supprimer définitivement le dossier "${label}" ?\n\nCette action est irréversible et supprimera :\n• Les balances N et N-1 déposées\n• Les états financiers générés\n• L'analyse financière associée`);
+  if (!confirmed) return;
+
+  toast('Suppression du dossier en cours…');
+  try {
+    // 1. Décrocher les références d'éventuels enregistrements dans credit_ledger
+    try {
+      await sb.from('credit_ledger').update({ exercise_id: null }).eq('exercise_id', id);
+    } catch (_) {}
+
+    // 2. Nettoyer les fichiers dans les buckets Supabase Storage (balances et etats)
+    try {
+      const { data: files } = await sb.from('exercise_files').select('storage_path, type').eq('exercise_id', id);
+      if (files && files.length) {
+        const balPaths = files.filter(f => f.type && f.type.startsWith('balance')).map(f => f.storage_path).filter(Boolean);
+        const etatPaths = files.filter(f => !f.type || !f.type.startsWith('balance')).map(f => f.storage_path).filter(Boolean);
+        if (balPaths.length) {
+          try { await sb.storage.from('balances').remove(balPaths); } catch (_) {}
+        }
+        if (etatPaths.length) {
+          try { await sb.storage.from('etats').remove(etatPaths); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    // 3. Supprimer les analyses financières associées
+    try {
+      await sb.from('financial_analyses').delete().eq('exercise_id', id);
+    } catch (_) {}
+
+    // 4. Supprimer les fichiers de la table exercise_files
+    try {
+      await sb.from('exercise_files').delete().eq('exercise_id', id);
+    } catch (_) {}
+
+    // 5. Supprimer l'exercice lui-même
+    const { error } = await sb.from('exercises').delete().eq('id', id);
+    if (error) {
+      toast('Erreur lors de la suppression : ' + dbErr(error), true);
+      return;
+    }
+
+    toast(`Le dossier "${label}" a été supprimé avec succès.`);
+
+    // Si on était dans ce dossier ouvert, revenir au tableau de bord
+    if (state.dossier?.exercise?.id === id) {
+      state.dossier = null;
+      location.hash = '#/dashboard';
+    } else {
+      await renderDashboard();
+    }
+  } catch (err) {
+    console.error('Erreur suppression dossier:', err);
+    toast('Erreur inattendue : ' + (err.message || err), true);
+  }
 }
 $('#btnNew').addEventListener('click', () => (location.hash = '#/nouveau'));
 
@@ -341,6 +406,8 @@ $('#selCompany').addEventListener('change', () => ($('#newCompany').hidden = !!$
 async function newDossier() {
   show('dossier');
   state.dossier = { exercise: null, company: null, infos: {}, balN: null, balN1: null };
+  const btnDelDossier = $('#btnDeleteCurrentDossier');
+  if (btnDelDossier) btnDelDossier.style.display = 'none';
   $('#dossierTitle').textContent = 'Nouveau dossier'; $('#dossierSub').textContent = '';
   await loadCompanies(); fillCompanySelect();
   const y = new Date().getFullYear() - 1;
@@ -389,6 +456,8 @@ $('#btnStep1').addEventListener('click', async () => {
   }
   history.replaceState(null, '', '#/dossier/' + ex.id);
   d.exercise = ex; d.company = company; d.infos = infos;
+  const btnDelDossier = $('#btnDeleteCurrentDossier');
+  if (btnDelDossier) btnDelDossier.style.display = 'inline-flex';
   $('#dossierTitle').textContent = company.nom; $('#dossierSub').textContent = `Exercice clos le ${dateFr(fin)}`;
   lockStep1();
   setStep(2);
@@ -403,6 +472,8 @@ async function openDossier(id) {
   if (error || !ex) { toast('Dossier introuvable.', true); location.hash = '#/dashboard'; return; }
   state.dossier = { exercise: ex, company: ex.companies, infos: ex.infos || {}, balN: null, balN1: null, files: ex.exercise_files || [] };
   state.companies = [ex.companies]; fillCompanySelect(ex.company_id); lockStep1();
+  const btnDelDossier = $('#btnDeleteCurrentDossier');
+  if (btnDelDossier) btnDelDossier.style.display = 'inline-flex';
   $('#exFin').value = ex.date_fin || ex.infos?.fin || ''; $('#exDebut').value = ex.date_debut || ex.infos?.debut || '';
   $('#dossierTitle').textContent = ex.companies?.nom || 'Dossier';
   $('#dossierSub').textContent = `Exercice clos le ${dateFr(ex.date_fin)} · ${STATUTS[ex.statut]?.[0] || ex.statut}`;
@@ -412,6 +483,8 @@ async function openDossier(id) {
     const f = state.dossier.files.find(x => x.type === type);
     if (!f) continue;
     $('#file' + k).textContent = f.nom_original + ' (chargement…)';
+    const btnDel = $('#btnBalDel' + k);
+    if (btnDel) btnDel.style.display = 'inline-flex';
     const { data, error: e2 } = await sb.storage.from('balances').download(f.storage_path);
     if (e2) { $('#file' + k).textContent = f.nom_original + ' (illisible : ' + e2.message + ')'; continue; }
     await handleBalanceFile(k, new File([data], f.nom_original), false);
@@ -426,10 +499,102 @@ function resetBalanceUI() {
     $('#rep' + k).innerHTML = '';
     const btnView = $('#btnBalView' + k);
     if (btnView) btnView.style.display = 'none';
+    const btnDel = $('#btnBalDel' + k);
+    if (btnDel) btnDel.style.display = 'none';
+    const inp = document.querySelector(`[data-input="${k}"]`);
+    if (inp) inp.value = '';
   }
   $('#btnStep2').disabled = true;
 }
+
+async function deleteBalance(k) {
+  const d = state.dossier;
+  if (!d) return;
+  const label = k === 'N' ? 'Balance N' : 'Balance N-1';
+
+  const confirmed = confirm(`Êtes-vous sûr de vouloir supprimer la ${label} déposée ?\n\nVous pourrez ensuite introduire un nouveau fichier de balance.`);
+  if (!confirmed) return;
+
+  toast(`Suppression de la ${label}…`);
+
+  // 1. Réinitialisation en mémoire
+  d[k === 'N' ? 'balN' : 'balN1'] = null;
+  state.engine = null;
+
+  // 2. Si le dossier est persisté dans Supabase
+  if (d.exercise) {
+    const type = k === 'N' ? 'balance_n' : 'balance_n1';
+
+    try {
+      const { data: files } = await sb.from('exercise_files').select('storage_path').eq('exercise_id', d.exercise.id).eq('type', type);
+      if (files && files.length) {
+        const paths = files.map(x => x.storage_path).filter(Boolean);
+        if (paths.length) {
+          try { await sb.storage.from('balances').remove(paths); } catch (_) {}
+        }
+      }
+      await sb.from('exercise_files').delete().eq('exercise_id', d.exercise.id).eq('type', type);
+    } catch (err) {
+      console.warn('Erreur suppression fichier balance:', err);
+    }
+
+    if (d.files) {
+      d.files = d.files.filter(x => x.type !== type);
+    }
+
+    if (k === 'N') {
+      try {
+        await sb.from('exercises').update({
+          nb_comptes: null,
+          total_debit: null,
+          total_credit: null,
+          balance_equilibree: null,
+          ecart_balance: null
+        }).eq('id', d.exercise.id);
+      } catch (err) {
+        console.warn('Erreur remise à zéro totaux balance:', err);
+      }
+    }
+
+    if (d.exercise.generated_at) {
+      try {
+        await sb.from('exercises').update({
+          generated_at: null,
+          statut: 'en_attente'
+        }).eq('id', d.exercise.id);
+        d.exercise.generated_at = null;
+        d.exercise.statut = 'en_attente';
+      } catch (_) {}
+    }
+  }
+
+  // 3. Réinitialiser les champs de l'interface graphique
+  $('#file' + k).textContent = 'Aucun fichier';
+  $('#rep' + k).innerHTML = '';
+  const btnView = $('#btnBalView' + k);
+  if (btnView) btnView.style.display = 'none';
+  const btnDel = $('#btnBalDel' + k);
+  if (btnDel) btnDel.style.display = 'none';
+
+  const inp = document.querySelector(`[data-input="${k}"]`);
+  if (inp) inp.value = '';
+
+  // 4. Mettre à jour le bouton suivant
+  $('#btnStep2').disabled = !(d.balN?.ok && d.balN1?.ok);
+
+  toast(`La ${label} a été supprimée avec succès. Vous pouvez maintenant introduire un nouveau fichier.`);
+}
 $$('[data-input]').forEach(inp => inp.addEventListener('change', () => inp.files[0] && handleBalanceFile(inp.dataset.input, inp.files[0], true).finally(() => (inp.value = ''))));
+$$('.btn-del-bal').forEach(btn => btn.addEventListener('click', () => deleteBalance(btn.dataset.balKey)));
+$('#btnDeleteCurrentDossier')?.addEventListener('click', () => {
+  if (state.dossier?.exercise) {
+    deleteDossier(
+      state.dossier.exercise.id,
+      state.dossier.company?.nom || 'Dossier',
+      state.dossier.exercise.date_fin || state.dossier.exercise.exercice
+    );
+  }
+});
 $$('.drop').forEach(z => {
   z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('over'); });
   z.addEventListener('dragleave', () => z.classList.remove('over'));
@@ -478,11 +643,15 @@ function renderBalanceReport(k, p) {
       ? `<button type="button" class="badge warn btn-fix-balance" data-bal-key="${k}" style="cursor:pointer; border:none; padding:4px 10px; font-size:12px; font-weight:700;" title="Cliquer pour examiner les remarques">⚠️ Lue avec remarques</button>` 
       : '<span class="badge ok">Conforme</span>');
   
-  // Met à jour et affiche le bouton d'édition rapide
+  // Met à jour et affiche le bouton d'édition rapide et de suppression
   const btnView = $('#btnBalView' + k);
   if (btnView) {
     btnView.style.display = 'inline-flex';
     btnView.textContent = `👁️ Visualiser & Modifier (${p.rows?.length || 0} comptes)`;
+  }
+  const btnDel = $('#btnBalDel' + k);
+  if (btnDel) {
+    btnDel.style.display = 'inline-flex';
   }
 
   // Erreurs enrichies avec lien direct vers le compte en anomalie
@@ -1080,6 +1249,13 @@ $('#btnSaveBalanceEdits')?.addEventListener('click', async () => {
 
   $('#modalBalanceEditor').hidden = true;
   toast(`✅ ${label} enregistrée avec succès (${parsed.rows.length} comptes) !`);
+});
+
+$('#btnModalDeleteCurrentBalance')?.addEventListener('click', async () => {
+  if (currentBalKey) {
+    $('#modalBalanceEditor').hidden = true;
+    await deleteBalance(currentBalKey);
+  }
 });
 
 // ------------------------------------------------------------------ Validation des Remarques Client
@@ -2957,12 +3133,19 @@ function drawAdmin() {
       <td><select data-statut="${r.id}">${Object.entries(STATUTS).map(([k, [l]]) => `<option value="${k}" ${k === r.statut ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
       <td>${r.generated_at ? (rp.bloquants ? `<span class="badge bad">${rp.bloquants} bloquant(s)</span>` : '<span class="badge ok">OK</span>') + (rp.vigilance ? ` <span class="badge warn">${rp.vigilance} vigilance</span>` : '') : '<span class="muted small">non générée</span>'}</td>
       <td class="small">${esc(dateTimeFr(r.updated_at))}</td>
-      <td style="white-space:nowrap">${fb('balance_n', 'Bal. N', 'balances')} ${fb('balance_n1', 'Bal. N-1', 'balances')} ${fb('etats_complet_xlsx', 'Liasse', 'etats') || fb('etats_gratuit_xlsx', 'Liasse', 'etats')}</td></tr>`;
+      <td style="white-space:nowrap">${fb('balance_n', 'Bal. N', 'balances')} ${fb('balance_n1', 'Bal. N-1', 'balances')} ${fb('etats_complet_xlsx', 'Liasse', 'etats') || fb('etats_gratuit_xlsx', 'Liasse', 'etats')} <button type="button" class="btn danger sm btn-admin-del-ex" data-id="${r.id}" data-name="${esc(r.companies?.nom || 'Dossier')}" data-ex="${esc(dateFr(r.date_fin) || r.exercice)}" title="Supprimer définitivement ce dossier">🗑️</button></td></tr>`;
   }).join('') || '<tr><td colspan="8" class="muted">Aucun dossier.</td></tr>';
 }
 
 $('#adminSearch').addEventListener('input', drawAdmin);
-$('#adminTable').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (b) downloadStored(b.dataset.b, b.dataset.p, b.dataset.n); });
+$('#adminTable').addEventListener('click', async e => {
+  const b = e.target.closest('[data-p]'); if (b) downloadStored(b.dataset.b, b.dataset.p, b.dataset.n);
+  const del = e.target.closest('.btn-admin-del-ex');
+  if (del) {
+    await deleteDossier(del.dataset.id, del.dataset.name, del.dataset.ex);
+    await renderAdmin();
+  }
+});
 $('#adminTable').addEventListener('change', async e => {
   const s = e.target.closest('[data-statut]'); if (!s) return;
   const { error } = await sb.from('exercises').update({ statut: s.value }).eq('id', s.dataset.statut);
